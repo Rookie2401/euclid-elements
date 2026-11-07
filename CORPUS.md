@@ -1,6 +1,6 @@
 # Greek Euclid corpus
 
-The reader corpus is built from `reference/work.json` and `reference/about.json`, the Greek *Elements* data published by [westerncanon](https://github.com/Rookie2401/westerncanon/tree/master/data/euclid-elements). The reference files are retained verbatim. `scripts/import-corpus.mjs` turns their nested Book → section → item structure into the reader's book/unit structure and fetches each referenced figure into `public/diagrams/`. Runtime reading does not require a network connection.
+The reader corpus is built from `reference/work.json` and `reference/about.json`, the Greek *Elements* data published by [westerncanon](https://github.com/Rookie2401/westerncanon/tree/master/data/euclid-elements). The reference files are retained verbatim. `scripts/import-corpus.mjs` turns their nested Book → section → item structure into the reader's book/unit structure and fetches each referenced figure into `public/diagrams/`. Text and diagrams are served from this site; the original sources are not fetched during reading.
 
 ## Text and licensing
 

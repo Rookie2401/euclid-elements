@@ -6,16 +6,22 @@ const content = $('reader-content'), status = $('status');
 
 function safeText(node, value) { node.textContent = value ?? ''; return node; }
 function unitHref(book, unit) { return `#book-${book.number}/${encodeURIComponent(unit.id)}`; }
+function sectionKey(unit){return unit.kind==='proposition'?'propositions':unit.kind;}
 function buildBookNav() {
-  const nav = $('book-nav'), select = $('book-select');
-  nav.replaceChildren(); select.replaceChildren();
-  books.forEach((book, index) => {
-    const a = document.createElement('a'); a.className='book-link'; a.href=`#book-${book.number}`; a.dataset.book=String(index);
-    const roman=document.createElement('span'); roman.className='roman'; safeText(roman,book.roman || ROMANS[index]);
-    const title=document.createElement('span'); safeText(title,`Book ${book.roman || ROMANS[index]}`); a.append(roman,title); nav.append(a);
-    const option=document.createElement('option'); option.value=String(index); option.textContent=`Book ${book.roman || ROMANS[index]} · ${book.title}`; select.append(option);
-    (book.units || []).forEach(unit => flatUnits.push({book, unit, bookIndex:index}));
-  });
+  const select=$('book-select'); select.replaceChildren();
+  books.forEach((book,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=`Book ${book.roman||ROMANS[index]}`;select.append(option);(book.units||[]).forEach(unit=>flatUnits.push({book,unit,bookIndex:index}));});
+}
+function syncNavigation(bookIndex, unit) {
+  const book=books[bookIndex], sectionSelect=$('section-select'), propSelect=$('proposition-select');
+  $('book-select').value=String(bookIndex); sectionSelect.replaceChildren(); propSelect.replaceChildren();
+  const groups=[]; for(const u of book.units||[]){const key=sectionKey(u);if(!groups.some(g=>g.key===key))groups.push({key,title:key==='propositions'?'Propositions':displayTitle(u)});}
+  for(const g of groups){const opt=document.createElement('option');opt.value=g.key;opt.textContent=g.title;sectionSelect.append(opt);}
+  const key=sectionKey(unit); sectionSelect.value=key;
+  if(key==='propositions'){
+    const propositions=(book.units||[]).filter(u=>sectionKey(u)==='propositions');
+    for(const u of propositions){const opt=document.createElement('option');opt.value=u.id;opt.textContent=u.id.match(/(\d+)$/)?.[1]||displayTitle(u).replace(/^Propositions?\s*/i,'');propSelect.append(opt);}
+    propSelect.value=unit.id; $('proposition-label').hidden=false;
+  } else $('proposition-label').hidden=true;
 }
 function activateWordMarkup(paragraph, text, unitTitle) {
   // Keep the transcription as text nodes. Greek words become small buttons for dictionary hooks.
@@ -38,8 +44,7 @@ function renderUnit(index, {updateHash=true, scroll=true}={}) {
   index = Math.max(0, Math.min(flatUnits.length - 1, index)); currentUnitIndex=index;
   const {book,unit,bookIndex}=flatUnits[index]; currentBookIndex=bookIndex;
   $('crumb-book').textContent=`BOOK ${book.roman || ROMANS[bookIndex]}`;
-  $('book-nav').querySelectorAll('.book-link').forEach((link,i)=>link.setAttribute('aria-current',i===bookIndex?'page':'false'));
-  $('book-select').value=String(bookIndex);
+  syncNavigation(bookIndex,unit);
   content.replaceChildren();
   const firstOfBook=(book.units || [])[0]===unit;
   if(firstOfBook){
@@ -75,7 +80,7 @@ function renderUnit(index, {updateHash=true, scroll=true}={}) {
   clearTimeout(saveTimer); saveTimer=setTimeout(()=>{try{localStorage.setItem(STORAGE.position,JSON.stringify({book:book.number,unit:unit.id,title:`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`}));}catch{}},350);
 }
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function route(){const hash=decodeURIComponent(location.hash.slice(1));const match=hash.match(/^book-(\d+)(?:\/(.+))?$/);if(!match){renderUnit(0,{updateHash:true,scroll:false});return;}const bookIndex=Math.max(0,books.findIndex(b=>String(b.number)===match[1]));let index=flatUnits.findIndex(x=>x.bookIndex===bookIndex && x.unit.id===match[2]);if(index<0)index=flatUnits.findIndex(x=>x.bookIndex===bookIndex);renderUnit(index<0?0:index,{updateHash:false,scroll:false});}
+function route(){const hash=decodeURIComponent(location.hash.slice(1));const match=hash.match(/^book-(\d+)(?:\/(.+))?$/);if(!match){renderUnit(0,{updateHash:true,scroll:true});return;}const bookIndex=Math.max(0,books.findIndex(b=>String(b.number)===match[1]));let index=flatUnits.findIndex(x=>x.bookIndex===bookIndex && x.unit.id===match[2]);if(index<0)index=flatUnits.findIndex(x=>x.bookIndex===bookIndex);renderUnit(index<0?0:index,{updateHash:false,scroll:true});}
 function openDialog(id){const dialog=$(id);if(!dialog.open)dialog.showModal();}
 function restorePreferences(){try{const size=Number(localStorage.getItem(STORAGE.size));if(size>=1.15&&size<=2.05)document.documentElement.style.setProperty('--greek-size',`${size}rem`);if(localStorage.getItem(STORAGE.focus)==='1')setFocus(true);}catch{}}
 function setFocus(on){document.body.classList.toggle('focus-mode',on);$('focus-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem(STORAGE.focus,on?'1':'0');}catch{}}
@@ -83,11 +88,10 @@ $('font-down').addEventListener('click',()=>changeFont(-.1)); $('font-up').addEv
 function changeFont(delta){const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--greek-size'))||1.55;const size=Math.min(2.05,Math.max(1.15,Math.round((current+delta)*100)/100));document.documentElement.style.setProperty('--greek-size',`${size}rem`);try{localStorage.setItem(STORAGE.size,String(size));}catch{}}
 $('focus-toggle').addEventListener('click',()=>setFocus(!$('focus-toggle').matches('[aria-pressed="true"]')));
 $('about-open').addEventListener('click',()=>openDialog('about-dialog'));
-$('contents-open').addEventListener('click',()=>{populateContents('');openDialog('contents-dialog');$('contents-search').focus();});
-$('contents-search').addEventListener('input',e=>populateContents(e.target.value));
-function populateContents(query){const list=$('contents-list'),q=query.trim().toLocaleLowerCase();list.replaceChildren();books.forEach((book,bi)=>{const matches=(book.units||[]).map(unit=>({book,unit,bi})).filter(({unit})=>!q||`${book.roman} ${book.title} ${displayTitle(unit)} ${unit.entries?.map(x=>x.title).join(' ')}`.toLocaleLowerCase().includes(q));if(!matches.length)return;const group=document.createElement('section');group.className='contents-book';const title=document.createElement('h3');title.textContent=`Book ${book.roman} · ${book.title}`;group.append(title);matches.forEach(({unit})=>{const a=document.createElement('a');a.href=unitHref(book,unit);a.className='contents-link';a.textContent=displayTitle(unit);a.addEventListener('click',e=>{e.preventDefault();$('contents-dialog').close();location.hash=a.getAttribute('href').slice(1);});group.append(a);});list.append(group);});}
-$('book-select').addEventListener('change',e=>{const b=books[Number(e.target.value)];if(b)location.hash=`book-${b.number}`;});
-$('book-nav').addEventListener('click',e=>{const a=e.target.closest('.book-link');if(a){e.preventDefault();location.hash=a.getAttribute('href').slice(1);}});
+function navigateSelection(){const bi=Number($('book-select').value), book=books[bi];if(!book)return;const key=$('section-select').value;const units=(book.units||[]).filter(u=>sectionKey(u)===key);const unit=key==='propositions'?(units.find(u=>u.id===$('proposition-select').value)||units[0]):units[0];if(unit)location.hash=unitHref(book,unit).slice(1);}
+$('book-select').addEventListener('change',e=>{const b=books[Number(e.target.value)];if(!b)return;const first=b.units?.[0];if(first)location.hash=unitHref(b,first).slice(1);});
+$('section-select').addEventListener('change',navigateSelection);
+$('proposition-select').addEventListener('change',navigateSelection);
 $('page-nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a){e.preventDefault();location.hash=a.getAttribute('href').slice(1);}});
 document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.altKey||e.ctrlKey||e.metaKey||e.target.matches('input,textarea,select,button'))return;if(e.key==='ArrowLeft'&&currentUnitIndex>0)location.hash=unitHref(flatUnits[currentUnitIndex-1].book,flatUnits[currentUnitIndex-1].unit).slice(1);if(e.key==='ArrowRight'&&currentUnitIndex<flatUnits.length-1)location.hash=unitHref(flatUnits[currentUnitIndex+1].book,flatUnits[currentUnitIndex+1].unit).slice(1);});
 window.addEventListener('hashchange',route);

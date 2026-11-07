@@ -9,7 +9,7 @@ const root = path.resolve(here, "..");
 const source = path.resolve(process.env.GOLEARN_SOURCE || path.join(root, "..", "go-v0"));
 const sourceReal = await import("node:fs/promises").then(({ realpath }) => realpath(source));
 const outputReal = await import("node:fs/promises").then(({ realpath }) => realpath(root));
-if (/\\OneDrive(?:\\|$)/i.test(sourceReal) || /\\OneDrive(?:\\|$)/i.test(outputReal)) {
+if (/(^|[\\/])OneDrive([\\/]|$)/i.test(sourceReal) || /(^|[\\/])OneDrive([\\/]|$)/i.test(outputReal)) {
   throw new Error("GoLearn builds and outputs must be outside OneDrive.");
 }
 

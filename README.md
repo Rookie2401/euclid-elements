@@ -38,6 +38,8 @@ The vocabulary integration uses the existing GoLearn analysis/card code. Its acc
 
 The bridge and Koine form index are checked in. To regenerate them, place the GoLearn repository alongside this checkout (or set `GOLEARN_SOURCE`), install its dependencies, and run `npm run golearn`. The current build uses GoLearn commit `2663f585334b5a2c5b9001b020229262d41b5098` and esbuild 0.28.2. Build provenance and third-party acknowledgements are in `public/vendor/`.
 
-Word analysis uses GoLearn's available Koine tables, which have partial coverage of Euclid's mathematical Greek. Their displayed definitions are dictionary glosses; they are not a reviewed contextual translation of the geometry. Signed-in interactions use GoLearn's recorder and offline queue. Guest saved-word export stays on the device. Production CORS connectivity is checked; a real account login and sync require the account holder to test.
+Word analysis uses GoLearn's bundled Koine index and loads Ancient and Modern Greek table shards from the public Biblia edition when needed. Those tables have partial coverage of Euclid's mathematical Greek. Their displayed definitions are sourced glosses, rather than a reviewed contextual translation of the geometry. Grammar explanations and generated forms come from GoLearn's shared language pack and analyser. Greek has no full dictionary pack configured upstream, so dictionary-only etymologies, recordings, and related-word records can remain unavailable.
+
+Signed-in interactions use GoLearn's recorder and offline queue. Guest saved-word export stays on the device. Production connectivity is checked; real account login and sync require the account holder to test. The adapter waits for saved-session checks before showing the sign-in form, preserves new knowledge marks against stale responses, and shows the service's sign-in error message.
 
 Do not add local storage exports, account tokens, or credentials to source control.

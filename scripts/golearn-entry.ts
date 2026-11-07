@@ -3,6 +3,11 @@ import { createCardUI } from "../../go-v0/packages/golearn-extension/src/popup/c
 import { parseSelection } from "../../go-v0/packages/golearn-extension/src/parser";
 import { loadAnalyser } from "../../go-v0/packages/golearn-extension/src/analysers/loaders";
 import { installGreekIndex, type GreekFormIndex } from "../../go-v0/src/adapters/greek/index-store";
+import { createGreekShardLoader } from "../../go-v0/src/adapters/greek/shards";
+import { getAnalyser } from "../../go-v0/packages/golearn-extension/src/parser/registry";
+import { buildParadigm, selectedCellKeys, segmentationsOf, structureOf } from "../../go-v0/packages/golearn-extension/src/content/enrich";
+import type { PartOfSpeech } from "../../go-v0/src/core";
+import { packFor } from "../../go-v0/packages/language-packs/src/registry";
 import { createAccountService } from "../../go-v0/packages/biblia/src/account";
 import { accountRecorder, APP_VERSION, READER_ID } from "../../go-v0/packages/biblia/src/repo";
 import { createEventQueue } from "../../go-v0/packages/biblia/src/queue";
@@ -14,6 +19,12 @@ const CARD = createCardUI({ doc: document, speech: window.speechSynthesis });
 let account: ReturnType<typeof createAccountService> | undefined;
 let recorder: ReturnType<typeof accountRecorder> | undefined;
 let activeModel: ReturnType<typeof parseSelection> | undefined;
+let accountReady: Promise<void> = Promise.resolve();
+let accountReadyDone = true;
+let greekReady: Promise<void> = Promise.resolve();
+let greekLoaders: Array<Awaited<ReturnType<typeof createGreekShardLoader>>> = [];
+let knowledgeMutation = 0;
+let lookupGeneration = 0;
 let accountButton: HTMLButtonElement | undefined;
 let savedButton: HTMLButtonElement | undefined;
 let accountDialog: HTMLDialogElement | undefined;
@@ -102,6 +113,12 @@ function showAccount(): void {
   if (!accountDialog) return;
   const body = accountDialog.querySelector<HTMLElement>("[data-account-body]")!;
   body.replaceChildren();
+  if (!accountReadyDone) {
+    body.append(h("p", "Checking your GoLearn sign-in…"));
+    void accountReady.then(() => { if (accountDialog?.open) showAccount(); });
+    if (!accountDialog.open) accountDialog.showModal();
+    return;
+  }
   const state = account?.state();
   if (state?.signedIn) {
     body.append(h("p", `Signed in as ${state.email ?? "your GoLearn account"}.`));
@@ -126,7 +143,7 @@ function showAccount(): void {
       submit.disabled = true; status.textContent = "Signing in…";
       const secret = password.value; password.value = "";
       void account?.signIn(email.value, secret).then((result) => {
-        status.textContent = result.ok ? "Signed in." : "Could not sign in. Check your details and try again.";
+        status.textContent = result.ok ? "Signed in." : result.message;
         if (result.ok) { showAccount(); updateAccountButton(); }
       }).catch(() => { status.textContent = "Could not reach GoLearn. Try again."; }).finally(() => { password.value = ""; submit.disabled = false; });
     });
@@ -156,6 +173,24 @@ function anchorFor(element?: HTMLElement): { rect: DOMRect; viewport: { width: n
 }
 
 function openWord(detail: WordDetail): void {
+  const generation = ++lookupGeneration;
+  void greekReady.then(async () => {
+    const adapter = getAnalyser("el");
+    const keys = adapter?.tokenize(detail.context?.sentence ?? detail.word).filter((token) => token.isWord).map((token) => token.normalized) ?? [];
+    await Promise.all(greekLoaders.map((loader) => loader.ensure(keys)));
+    if (generation !== lookupGeneration) return;
+    // A long proof can exceed the shard cache; retain the selected form before parsing.
+    const selectedKeys = adapter?.tokenize(detail.word).filter((token) => token.isWord).map((token) => token.normalized) ?? [];
+    await Promise.all(greekLoaders.map((loader) => loader.ensure(selectedKeys)));
+    if (generation !== lookupGeneration || (detail.element && !detail.element.isConnected)) return;
+    openWordReady(detail);
+  }).catch(() => {
+    if (generation !== lookupGeneration) return;
+    CARD.showMessage("GoLearn could not load its Greek word analyser. Check your connection and try again.", anchorFor(detail.element), "error");
+  });
+}
+
+function openWordReady(detail: WordDetail): void {
   const word = detail.word.normalize("NFC").trim();
   if (!word) return;
   let model;
@@ -173,11 +208,49 @@ function openWord(detail: WordDetail): void {
     CARD.showMessage("GoLearn could not analyse this word with the available Greek word list.", anchorFor(node), "info");
     return;
   }
+  const adapter = getAnalyser("el");
+  const features = Object.fromEntries(model.features.map(({ key, value }) => [key, value]));
+  const paradigm = model.lemma && model.pos
+    ? buildParadigm(adapter, "el", model.lemma, model.pos as PartOfSpeech, undefined, { features, surface: model.surface })
+    : undefined;
+  const structure = model.lemma
+    ? structureOf(undefined, adapter, model.lemma, model.pos, model.surface, features, { languageId: "el" })
+    : undefined;
+  const segmentations = segmentationsOf(adapter, model.surface, sentence && start !== undefined && end !== undefined
+    ? { before: sentence.slice(0, start), after: sentence.slice(end) } : undefined);
+  const grammar = packFor("el")?.grammar;
+  const explain = {
+    state: "ready" as const,
+    features: model.features.map(({ key, value }) => {
+      const feature = grammar?.features.find((row) => row.key === key);
+      const names = value.split(",").map((part) => feature?.values[part.trim()]).filter((name): name is string => !!name);
+      return { key, value, label: feature?.label ?? key, ...(names.length ? { brief: names.join(" or ") } : {}), ...(feature?.explain ? { explanation: feature.explain } : {}) };
+    }),
+    constructions: model.constructions.flatMap((construction) => {
+      const row = grammar?.constructions.find((item) => item.id === construction.id);
+      return row ? [{ id: row.id, title: row.label, brief: row.explain.split(/(?<=[.!?])\s/u, 1)[0], explanation: row.explain }] : [];
+    }),
+  };
   CARD.show(model, anchorFor(detail.element), {
-    view: { languageName: `Koine Greek${detail.context?.reference ? ` · ${detail.context.reference}` : ""}` },
+    view: {
+      languageName: `Koine Greek${detail.context?.reference ? ` · ${detail.context.reference}` : ""}`,
+      sources: [
+        ...Object.values(adapter?.sources ?? {}).map((source) => ({ label: source.label, ...(source.licence ? { licence: source.licence } : {}) })),
+        ...greekLoaders.map((loader) => ({ label: loader.manifest.source.label, licence: loader.manifest.source.licence, url: loader.manifest.source.url })),
+      ],
+      enrichment: {
+        state: "ready",
+        ...(paradigm ? { paradigm, selected: selectedCellKeys(adapter, paradigm, features, model.surface) } : {}),
+        ...(structure ? { structure } : {}),
+        ...(segmentations ? { segmentations } : {}),
+        message: "Forms and word structure come from GoLearn’s Greek analysis rules. Full dictionary records for etymology, pronunciation, and related words are not connected in this reader.",
+      },
+      explain,
+    },
     actions: {
       onRate: (mark) => {
         if (!account?.session()) { CARD.setFeedback("Sign in to GoLearn to sync knowledge marks."); return; }
+        knowledgeMutation++;
         CARD.setFeedback("Saving your knowledge level…");
         void recordInteraction(model, detail, "mark", mark);
       },
@@ -200,6 +273,7 @@ function openWord(detail: WordDetail): void {
 }
 
 async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<void> {
+  const mutationAtStart = knowledgeMutation;
   const session = account?.session();
   const api = account?.api();
   // A reading can move from a provisional form to a lemma after the Greek
@@ -209,7 +283,7 @@ async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<
   try {
     const result = await api.knowledge(ids);
     // Avoid showing a previous word's or a previous account's knowledge.
-    if (activeModel !== model || !CARD.isOpen() || account?.session()?.learnerId !== session.learnerId) return;
+    if (activeModel !== model || !CARD.isOpen() || account?.session()?.learnerId !== session.learnerId || mutationAtStart !== knowledgeMutation) return;
     if (!result.ok) {
       CARD.setFeedback("Could not retrieve this word's saved knowledge level from GoLearn.");
       return;
@@ -268,6 +342,9 @@ export async function initGoLearn(options: { accountButton: HTMLElement; savedBu
   accountDialog = makeDialog("GoLearn account", "accountBody");
   savedDialog = makeDialog("Saved words", "savedList");
   account = createAccountService({ serviceUrl: SERVICE_URL, storage: localStorage, fetch: window.fetch.bind(window) });
+  accountReady = account.start().catch(() => undefined);
+  accountReadyDone = false;
+  void accountReady.then(() => { accountReadyDone = true; if (accountDialog?.open) showAccount(); });
   recorder = accountRecorder({
     session: () => { const session = account?.session(); const api = account?.api(); return session && api ? { api, learnerId: session.learnerId, deviceId: session.deviceId } : undefined; },
     queue: createEventQueue(localStorage), storage: localStorage, win: window,
@@ -279,9 +356,38 @@ export async function initGoLearn(options: { accountButton: HTMLElement; savedBu
   renderSaved(); updateAccountButton();
   account.subscribe(updateAccountButton);
   document.addEventListener("euclid:word", ((event: CustomEvent<WordDetail>) => openWord(event.detail)) as EventListener);
-  void Promise.all([loadAnalyser("el"), fetch(new URL("./lexicon/el/koine-index.json", import.meta.url)).then(async (response) => {
+  greekReady = Promise.all([loadAnalyser("el"), fetch(new URL("./lexicon/el/koine-index.json", import.meta.url)).then(async (response) => {
     if (!response.ok) return;
     installGreekIndex(await response.json() as GreekFormIndex);
-  }).catch(() => undefined)]).catch(() => undefined);
-  void account.start().catch(() => undefined);
+  }).catch(() => undefined)]).then(async () => {
+    // Prefer assets packaged with this reader; the deployed Biblia site is the same-origin fallback
+    // because it already hosts the shared Ancient and Modern Greek form indexes.
+    const sourceAt = (base: string) => ({
+      async fetch(path: string): Promise<Response> {
+        const response = await fetch(new URL(`${base}/${path}`, import.meta.url));
+        if (!response.ok) throw new Error(`Greek index request failed (${response.status}).`);
+        return response;
+      },
+    });
+    const localSource = sourceAt("./lexicon");
+    const sharedSource = {
+      async fetch(path: string): Promise<Response> {
+        const response = await fetch(new URL(`https://rookie2401.github.io/biblia/lexicon/${path}`));
+        if (!response.ok) throw new Error(`Greek index request failed (${response.status}).`);
+        return response;
+      },
+    };
+    const shardSource = (source: typeof localSource) => ({
+      async fetchJson(path: string) { return source.fetch(path).then((response) => response.json()); },
+      async fetchBytes(path: string) { return new Uint8Array(await source.fetch(path).then((response) => response.arrayBuffer())); },
+    });
+    const loadSet = async (base: "el/ancient" | "el/modern", maxLoaded: number) => {
+      try { return await createGreekShardLoader(shardSource(localSource), { base, maxLoaded }); }
+      catch { return createGreekShardLoader(shardSource(sharedSource), { base, maxLoaded }); }
+    };
+    greekLoaders = (await Promise.allSettled([
+      loadSet("el/ancient", 32),
+      loadSet("el/modern", 16),
+    ])).flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  });
 }

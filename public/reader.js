@@ -7,21 +7,43 @@ const content = $('reader-content'), status = $('status');
 function safeText(node, value) { node.textContent = value ?? ''; return node; }
 function unitHref(book, unit) { return `#book-${book.number}/${encodeURIComponent(unit.id)}`; }
 function sectionKey(unit){return unit.kind==='proposition'?'propositions':unit.kind;}
+function unitCount(unit){return (unit.entries||[]).length;}
+function propNumber(unit){return unit.id.match(/(?:prop|proposition)[-:]?(\d+)$/i)?.[1]||unit.title?.match(/\d+/)?.[0]||'';}
+function unitCountLabel(unit){const n=unitCount(unit),title=displayTitle(unit).toLowerCase();return `${n} ${title==='definitions'?'definitions':title==='postulates'?'postulates':title==='common notions'?'notions':'items'}`;}
+function navigationTitle(unit){return sectionKey(unit)==='propositions'?`Proposition ${propNumber(unit)}`:displayTitle(unit);}
+function contentsRow(label, meta, href, current=false){
+  const a=document.createElement('a');a.className=`contents-link${current?' is-current':''}`;a.href=href;a.textContent=label;
+  if(current)a.setAttribute('aria-current','page');
+  const count=document.createElement('span');count.className='contents-meta';count.textContent=meta;a.append(count);return a;
+}
 function buildBookNav() {
-  const select=$('book-select'); select.replaceChildren();
-  books.forEach((book,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=`Book ${book.roman||ROMANS[index]}`;select.append(option);(book.units||[]).forEach(unit=>flatUnits.push({book,unit,bookIndex:index}));});
+  flatUnits=[];const tree=$('contents-tree');tree.replaceChildren();
+  books.forEach((book,index)=>{
+    const units=book.units||[];units.forEach(unit=>flatUnits.push({book,unit,bookIndex:index}));
+    const bookDetails=document.createElement('details');bookDetails.className='contents-group contents-book';bookDetails.dataset.book=String(index);
+    const propositionCount=units.filter(u=>sectionKey(u)==='propositions').length;
+    const summary=document.createElement('summary');summary.innerHTML=`<span class="tree-chevron" aria-hidden="true"></span><span class="tree-title">Book ${book.roman||ROMANS[index]}</span><span class="contents-meta">${propositionCount} propositions</span>`;bookDetails.append(summary);
+    const children=document.createElement('div');children.className='contents-children';
+    const prelim=units.filter(u=>sectionKey(u)!=='propositions');
+    prelim.forEach(unit=>children.append(contentsRow(displayTitle(unit),unitCountLabel(unit),unitHref(book,unit))));
+    const props=units.filter(u=>sectionKey(u)==='propositions');
+    if(props.length){
+      const group=document.createElement('details');group.className='contents-group contents-propositions';
+      const head=document.createElement('summary');head.innerHTML=`<span class="tree-chevron" aria-hidden="true"></span><span class="tree-title">Propositions</span><span class="contents-meta">${props.length}</span>`;group.append(head);
+      const list=document.createElement('div');list.className='contents-children contents-proposition-list';
+      props.forEach(unit=>list.append(contentsRow(`Proposition ${propNumber(unit)}`,``,unitHref(book,unit))));group.append(list);children.append(group);
+    }
+    bookDetails.append(children);tree.append(bookDetails);
+  });
 }
 function syncNavigation(bookIndex, unit) {
-  const book=books[bookIndex], sectionSelect=$('section-select'), propSelect=$('proposition-select');
-  $('book-select').value=String(bookIndex); sectionSelect.replaceChildren(); propSelect.replaceChildren();
-  const groups=[]; for(const u of book.units||[]){const key=sectionKey(u);if(!groups.some(g=>g.key===key))groups.push({key,title:key==='propositions'?'Propositions':displayTitle(u)});}
-  for(const g of groups){const opt=document.createElement('option');opt.value=g.key;opt.textContent=g.title;sectionSelect.append(opt);}
-  const key=sectionKey(unit); sectionSelect.value=key;
-  if(key==='propositions'){
-    const propositions=(book.units||[]).filter(u=>sectionKey(u)==='propositions');
-    for(const u of propositions){const opt=document.createElement('option');opt.value=u.id;opt.textContent=u.id.match(/(\d+)$/)?.[1]||displayTitle(u).replace(/^Propositions?\s*/i,'');propSelect.append(opt);}
-    propSelect.value=unit.id; $('proposition-label').hidden=false;
-  } else $('proposition-label').hidden=true;
+  const book=books[bookIndex],title=navigationTitle(unit);$('contents-current').textContent=`Book ${book.roman||ROMANS[bookIndex]} · ${title}`;
+  const disclosure=$('contents-disclosure');
+  document.querySelectorAll('.contents-link').forEach(a=>{const active=a.getAttribute('href')===unitHref(book,unit);a.classList.toggle('is-current',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  document.querySelectorAll('.contents-book').forEach(d=>{d.classList.toggle('is-current',Number(d.dataset.book)===bookIndex);});
+  const activeBook=document.querySelector(`.contents-book[data-book="${bookIndex}"]`);if(activeBook)activeBook.open=true;
+  const propGroup=activeBook?.querySelector('.contents-propositions');if(propGroup)propGroup.open=sectionKey(unit)==='propositions';
+  disclosure.setAttribute('aria-label',`Contents, current location Book ${book.roman||ROMANS[bookIndex]}, ${title}`);
 }
 function activateWordMarkup(paragraph, text, unitTitle) {
   // Keep the transcription as text nodes. Greek words become small buttons for dictionary hooks.
@@ -88,15 +110,13 @@ $('font-down').addEventListener('click',()=>changeFont(-.1)); $('font-up').addEv
 function changeFont(delta){const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--greek-size'))||1.55;const size=Math.min(2.05,Math.max(1.15,Math.round((current+delta)*100)/100));document.documentElement.style.setProperty('--greek-size',`${size}rem`);try{localStorage.setItem(STORAGE.size,String(size));}catch{}}
 $('focus-toggle').addEventListener('click',()=>setFocus(!$('focus-toggle').matches('[aria-pressed="true"]')));
 $('about-open').addEventListener('click',()=>openDialog('about-dialog'));
-function navigateSelection(){const bi=Number($('book-select').value), book=books[bi];if(!book)return;const key=$('section-select').value;const units=(book.units||[]).filter(u=>sectionKey(u)===key);const unit=key==='propositions'?(units.find(u=>u.id===$('proposition-select').value)||units[0]):units[0];if(unit)location.hash=unitHref(book,unit).slice(1);}
-$('book-select').addEventListener('change',e=>{const b=books[Number(e.target.value)];if(!b)return;const first=b.units?.[0];if(first)location.hash=unitHref(b,first).slice(1);});
-$('section-select').addEventListener('change',navigateSelection);
-$('proposition-select').addEventListener('change',navigateSelection);
+$('contents-tree').addEventListener('click',e=>{const a=e.target.closest('a.contents-link');if(!a)return;e.preventDefault();$('contents-disclosure').open=false;location.hash=a.getAttribute('href').slice(1);});
+$('contents-disclosure').addEventListener('keydown',e=>{if(e.key==='Escape'&&$('contents-disclosure').open){e.preventDefault();$('contents-disclosure').open=false;$('contents-summary').focus();}});
 $('page-nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a){e.preventDefault();location.hash=a.getAttribute('href').slice(1);}});
-document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.altKey||e.ctrlKey||e.metaKey||e.target.matches('input,textarea,select,button'))return;if(e.key==='ArrowLeft'&&currentUnitIndex>0)location.hash=unitHref(flatUnits[currentUnitIndex-1].book,flatUnits[currentUnitIndex-1].unit).slice(1);if(e.key==='ArrowRight'&&currentUnitIndex<flatUnits.length-1)location.hash=unitHref(flatUnits[currentUnitIndex+1].book,flatUnits[currentUnitIndex+1].unit).slice(1);});
+document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||$('contents-disclosure').open||e.altKey||e.ctrlKey||e.metaKey||e.target.matches('input,textarea,select,button'))return;if(e.key==='ArrowLeft'&&currentUnitIndex>0)location.hash=unitHref(flatUnits[currentUnitIndex-1].book,flatUnits[currentUnitIndex-1].unit).slice(1);if(e.key==='ArrowRight'&&currentUnitIndex<flatUnits.length-1)location.hash=unitHref(flatUnits[currentUnitIndex+1].book,flatUnits[currentUnitIndex+1].unit).slice(1);});
 window.addEventListener('hashchange',route);
 restorePreferences();
-try{const module=await import('./golearn.js');if(module.initGoLearn)await module.initGoLearn({wordEvent:'euclid:word',accountButton:$('account-open'),savedButton:$('saved-open')});}catch(error){console.info('GoLearn account and word tools are not available yet.',error);}
+try{const module=await import('./golearn.js?v=biblia-golearn-3');if(module.initGoLearn)await module.initGoLearn({wordEvent:'euclid:word',accountButton:$('account-open'),savedButton:$('saved-open')});}catch(error){console.info('GoLearn account and word tools are not available yet.',error);}
 try{
   const response=await fetch('./data/elements.json'); if(!response.ok)throw new Error(`The text file returned ${response.status}.`);
   const data=await response.json(); books=data.books||[];if(!books.length)throw new Error('No books were found in the text file.');buildBookNav();restorePreferences();

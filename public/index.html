@@ -6,8 +6,8 @@
   <meta name="description" content="Read the Greek text of Euclid’s Elements, arranged by book and proposition with diagrams from Heiberg’s edition.">
   <meta name="theme-color" content="#191613">
   <title>Euclid’s Elements — Ecclesia</title>
-  <link rel="stylesheet" href="./reader.css?v=dropdowns-dark-2">
-  <script type="module" src="./reader.js?v=dropdowns-dark-2"></script>
+  <link rel="stylesheet" href="./reader.css?v=biblia-golearn-3">
+  <script type="module" src="./reader.js?v=biblia-golearn-3"></script>
 </head>
 <body>
   <header class="topbar">
@@ -22,11 +22,10 @@
   <main class="shell">
     <section class="reading-area" aria-label="Euclid text">
       <div class="reading-tools">
-        <div class="navigation-selects" aria-label="Choose a place in Euclid">
-          <label>Book<select id="book-select" aria-label="Book"></select></label>
-          <label>Section<select id="section-select" aria-label="Section"></select></label>
-          <label id="proposition-label" hidden>Proposition<select id="proposition-select" aria-label="Proposition"></select></label>
-        </div>
+        <details class="contents-disclosure" id="contents-disclosure">
+          <summary id="contents-summary" aria-label="Open table of contents"><span class="contents-label">CONTENTS</span><span id="contents-current">Book I · Definitions</span><span class="contents-chevron" aria-hidden="true">⌄</span></summary>
+          <nav id="contents-tree" class="contents-tree" aria-label="Euclid table of contents"></nav>
+        </details>
         <div class="crumbs"><span>GREEK TEXT</span><span class="crumb-dot">·</span><span id="crumb-book">BOOK I</span></div>
         <div class="tools-right">
           <button id="focus-toggle" class="tool-button" type="button" aria-pressed="false" title="Toggle focus mode"><span aria-hidden="true">◉</span> Focus</button>

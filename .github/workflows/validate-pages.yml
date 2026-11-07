@@ -1,0 +1,46 @@
+name: Validate Elements and published reader
+on:
+  push:
+    branches: [main, gh-pages]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 12 * * *'
+permissions:
+  contents: read
+jobs:
+  corpus:
+    if: github.ref != 'refs/heads/gh-pages'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate Greek corpus, diagrams, assets and JavaScript
+        run: npm run validate
+  published:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/gh-pages'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify GitHub Pages HTML and Greek corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://rookie2401.github.io/euclid-elements'
+          for path in / /reader.js /reader.css /golearn.js /data/elements.json; do
+            echo "Checking ${base}${path}"
+            curl --fail --location --silent --show-error --retry 5 --retry-delay 10 --retry-all-errors --output /tmp/euclid-check "${base}${path}"
+            test -s /tmp/euclid-check
+          done
+          curl --fail --location --silent --show-error --retry 5 --retry-delay 10 --retry-all-errors \
+            "${base}/data/elements.json" -o /tmp/elements.json
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const data=JSON.parse(fs.readFileSync("/tmp/elements.json","utf8"));
+            if(data.books?.length!==13) throw Error("Expected 13 books");
+            const props=data.books.flatMap(b=>b.units||[]).filter(u=>u.kind==="proposition");
+            if(props.length!==465) throw Error("Expected 465 propositions; got "+props.length);
+            console.log("Published Greek corpus verified: 13 books, 465 propositions");
+          '

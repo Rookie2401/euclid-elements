@@ -1,0 +1,64 @@
+name: Rebuild and publish GoLearn bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/golearn-entry.ts
+      - scripts/build-golearn.mjs
+      - .github/workflows/rebuild-golearn.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: euclid-golearn-publication
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Elements with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check out pinned GoLearn source
+        uses: actions/checkout@v4
+        with:
+          repository: Rookie2401/go-v0
+          ref: 2663f585334b5a2c5b9001b020229262d41b5098
+          path: golearn-source
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install GoLearn dependencies and bridge bundler
+        working-directory: golearn-source
+        run: |
+          npm ci --include=dev
+          npm install --no-save --package-lock=false esbuild@0.28.2
+      - name: Build authenticated word-state bridge
+        env:
+          GOLEARN_SOURCE: ${{ github.workspace }}/golearn-source
+        run: npm run golearn
+      - name: Validate Elements and all referenced assets
+        run: npm run validate
+      - name: Commit bundled bridge to source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/golearn.js public/vendor/golearn-build.json public/lexicon/el/koine-index.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Rebuild GoLearn bridge with saved word-state support'
+            git push origin HEAD:main
+          fi
+      - name: Publish public directory to GitHub Pages branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git subtree split --prefix=public -b euclid-pages-release
+          git push origin euclid-pages-release:gh-pages

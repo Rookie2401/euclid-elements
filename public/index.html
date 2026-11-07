@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Read the Greek text of Euclid’s Elements, arranged by book and proposition with diagrams from Heiberg’s edition.">
-  <meta name="theme-color" content="#183d32">
+  <meta name="theme-color" content="#191613">
   <title>Euclid’s Elements — Ecclesia</title>
   <link rel="stylesheet" href="./reader.css">
   <script type="module" src="./reader.js"></script>
@@ -20,18 +20,15 @@
     </div>
   </header>
   <main class="shell">
-    <aside class="book-rail" aria-label="Books">
-      <div class="rail-heading">THE THIRTEEN BOOKS</div>
-      <label class="mobile-book-label" for="book-select">Choose a book</label>
-      <select id="book-select" class="mobile-book-select" aria-label="Choose a book"></select>
-      <nav id="book-nav" aria-label="Navigate books"></nav>
-      <div class="rail-foot"><span class="ornament">✳</span><span>The Greek text<br>Heiberg edition</span></div>
-    </aside>
     <section class="reading-area" aria-label="Euclid text">
       <div class="reading-tools">
+        <div class="navigation-selects" aria-label="Choose a place in Euclid">
+          <label>Book<select id="book-select" aria-label="Book"></select></label>
+          <label>Section<select id="section-select" aria-label="Section"></select></label>
+          <label id="proposition-label" hidden>Proposition<select id="proposition-select" aria-label="Proposition"></select></label>
+        </div>
         <div class="crumbs"><span>GREEK TEXT</span><span class="crumb-dot">·</span><span id="crumb-book">BOOK I</span></div>
         <div class="tools-right">
-          <button id="contents-open" class="tool-button" type="button">Contents</button>
           <button id="focus-toggle" class="tool-button" type="button" aria-pressed="false" title="Toggle focus mode"><span aria-hidden="true">◉</span> Focus</button>
           <span class="tool-divider" aria-hidden="true"></span>
           <button id="font-down" class="font-button" type="button" aria-label="Decrease text size">A−</button><button id="font-up" class="font-button" type="button" aria-label="Increase text size">A+</button>
@@ -49,13 +46,6 @@
     <p>Heiberg’s edition is public domain. The digital transcription is distributed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>. The source follows Heiberg’s editorial exclusions, omitting passages he marked for deletion. English book and section headings are editorial aids.</p>
     <p>The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.</p>
     <p class="source-line">Source data: <a href="https://github.com/Rookie2401/westerncanon" target="_blank" rel="noreferrer">Rookie2401/westerncanon</a>. Reader: <a href="https://github.com/Rookie2401/euclid-elements" target="_blank" rel="noreferrer">Rookie2401/euclid-elements</a></p>
-  </dialog>
-  <dialog id="contents-dialog" class="dialog contents-dialog">
-    <form method="dialog"><button class="dialog-close" aria-label="Close contents">×</button></form>
-    <p class="eyebrow">THE THIRTEEN BOOKS</p><h2>Contents</h2>
-    <label class="contents-search-label" for="contents-search">Find a section</label>
-    <input id="contents-search" class="contents-search" type="search" placeholder="Search headings or numbers">
-    <div id="contents-list" class="contents-list"></div>
   </dialog>
   <dialog id="diagram-dialog" class="diagram-dialog" aria-label="Enlarged diagram">
     <form method="dialog"><button class="dialog-close" aria-label="Close enlarged diagram">×</button></form>

@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { readFile, writeFile, mkdir, copyFile, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile, rm, access } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,8 +49,16 @@ try {
     logLevel: "info",
     loader: { ".md": "text" },
   });
-  await copyFile(asset, lexiconOut);
-  await import("node:fs/promises").then(({ access }) => access(sourceNotice));
+  // GoLearn's generated Koine index is gitignored. When building in CI,
+  // retain the already-vendored index in this site's public directory.
+  try {
+    await copyFile(asset, lexiconOut);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    await access(lexiconOut);
+    console.log("Using the existing bundled Koine index (upstream generated asset is not tracked).");
+  }
+  await access(sourceNotice);
   await mkdir(path.join(root, "public", "vendor"), { recursive: true });
   await writeFile(path.join(root, "public", "vendor", "golearn-build.json"), JSON.stringify({ source: "GoLearn", commit, esbuild: esbuildPackage.version, serviceUrl: "https://go-v0.onrender.com" }, null, 2) + "\n");
 } finally {

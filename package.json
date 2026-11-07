@@ -1,0 +1,12 @@
+{
+  "name": "euclid-elements-greek",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "serve": "node scripts/serve.mjs",
+    "corpus": "node scripts/import-corpus.mjs",
+    "golearn": "node scripts/build-golearn.mjs"
+  }
+}

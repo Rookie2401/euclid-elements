@@ -202,9 +202,12 @@ function openWord(detail: WordDetail): void {
 async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<void> {
   const session = account?.session();
   const api = account?.api();
-  if (!session || !api || !model.itemIds.length) return;
+  // A reading can move from a provisional form to a lemma after the Greek
+  // index loads. Check both ids so existing marks are not made to disappear.
+  const ids = [...new Set([...model.itemIds, ...(model.formId ? [model.formId] : [])])];
+  if (!session || !api || !ids.length) return;
   try {
-    const result = await api.knowledge(model.itemIds);
+    const result = await api.knowledge(ids);
     // Avoid showing a previous word's or a previous account's knowledge.
     if (activeModel !== model || !CARD.isOpen() || account?.session()?.learnerId !== session.learnerId) return;
     if (!result.ok) {
@@ -213,7 +216,7 @@ async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<
     }
     const rows = result.data.knowledge || [];
     // Prefer the marked lemma, then the model's main item, then the form.
-    const matched = model.itemIds.map((id) => rows.find((row) => row.unitId === id)).filter((row) => !!row);
+    const matched = ids.map((id) => rows.find((row) => row.unitId === id)).filter((row) => !!row);
     const knowledge = matched.find((row) => !!row?.selfMark) ?? matched[0];
     CARD.update({
       profile: {

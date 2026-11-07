@@ -176,11 +176,18 @@ function openWord(detail: WordDetail): void {
   CARD.show(model, anchorFor(detail.element), {
     view: { languageName: `Koine Greek${detail.context?.reference ? ` · ${detail.context.reference}` : ""}` },
     actions: {
-      onRate: (mark) => { if (!account?.session()) CARD.setFeedback("Sign in to GoLearn to sync knowledge marks."); else void recordInteraction(model, detail, "mark", mark); },
+      onRate: (mark) => {
+        if (!account?.session()) { CARD.setFeedback("Sign in to GoLearn to sync knowledge marks."); return; }
+        CARD.setFeedback("Saving your knowledge level…");
+        void recordInteraction(model, detail, "mark", mark);
+      },
       onLayer: (layer) => { if (!account?.session()) CARD.setFeedback("Sign in to GoLearn to sync reading activity."); else void recordInteraction(model, detail, "layer", layer); },
     },
   });
   activeModel = model;
+  // The common GoLearn card starts with no learner profile. Populate it from the
+  // signed-in Repository so a saved knowledge level survives closing the card.
+  void loadKnowledge(model);
   const host = CARD.host();
   const root = host ? CARD.root() : undefined;
   if (!root || root.querySelector("[data-euclid-save]")) return;
@@ -190,6 +197,39 @@ function openWord(detail: WordDetail): void {
   const card = root.querySelector(".card");
   card?.append(save);
   void recordInteraction(model, detail, "selection");
+}
+
+async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<void> {
+  const session = account?.session();
+  const api = account?.api();
+  if (!session || !api || !model.itemIds.length) return;
+  try {
+    const result = await api.knowledge(model.itemIds);
+    // Avoid showing a previous word's or a previous account's knowledge.
+    if (activeModel !== model || !CARD.isOpen() || account?.session()?.learnerId !== session.learnerId) return;
+    if (!result.ok) {
+      CARD.setFeedback("Could not retrieve this word's saved knowledge level from GoLearn.");
+      return;
+    }
+    const rows = result.data.knowledge || [];
+    // Prefer the marked lemma, then the model's main item, then the form.
+    const matched = model.itemIds.map((id) => rows.find((row) => row.unitId === id)).filter((row) => !!row);
+    const knowledge = matched.find((row) => !!row?.selfMark) ?? matched[0];
+    CARD.update({
+      profile: {
+        state: "ready",
+        weak: [],
+        level: knowledge?.level ?? "new",
+        ...(knowledge?.selfMark ? { selfMark: knowledge.selfMark.mark } : {}),
+        encounters: knowledge?.encounters ?? 0,
+        met: knowledge?.encounters ?? 0,
+      },
+    });
+  } catch {
+    if (activeModel === model && CARD.isOpen()) {
+      CARD.setFeedback("GoLearn could not load this word's saved state. Check your connection.");
+    }
+  }
 }
 
 async function recordInteraction(model: ReturnType<typeof parseSelection>, detail: WordDetail, kind: "selection" | "mark" | "layer", value?: string): Promise<void> {
@@ -205,12 +245,16 @@ async function recordInteraction(model: ReturnType<typeof parseSelection>, detai
   const event = kind === "selection" ? buildSelectionEvent(base)
     : kind === "mark" ? buildMarkEvent(base, value as Parameters<typeof buildMarkEvent>[1])
       : buildAssistanceEvent(base, value as Parameters<typeof buildAssistanceEvent>[1]);
-  const result = await recorder.record([event]);
-  if (activeModel !== model || !CARD.isOpen()) return;
-  if (!result.ok) CARD.setFeedback("GoLearn could not save this activity. Your saved words remain on this device.");
-  else {
-    if (kind === "mark") CARD.update({ rated: value as Parameters<typeof buildMarkEvent>[1] });
-    CARD.setFeedback(result.message ? "Saved on this device; GoLearn sync is pending." : "Synced to GoLearn.");
+  try {
+    const result = await recorder.record([event]);
+    if (activeModel !== model || !CARD.isOpen()) return;
+    if (!result.ok) CARD.setFeedback(result.message || "GoLearn could not save this activity.");
+    else {
+      if (kind === "mark") CARD.update({ rated: value as Parameters<typeof buildMarkEvent>[1] });
+      CARD.setFeedback(result.queued ? "Saved on this device; GoLearn sync is pending." : "Synced to GoLearn.");
+    }
+  } catch {
+    if (activeModel === model && CARD.isOpen()) CARD.setFeedback("Could not save the knowledge level. Please try again.");
   }
 }
 

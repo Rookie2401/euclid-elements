@@ -1,0 +1,6 @@
+{
+  "source": "GoLearn",
+  "commit": "2663f585334b5a2c5b9001b020229262d41b5098",
+  "esbuild": "0.28.2",
+  "serviceUrl": "https://go-v0.onrender.com"
+}

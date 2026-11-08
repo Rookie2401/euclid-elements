@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const ROMANS = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII'];
-const STORAGE = { position:'ecclesia.euclid.position', size:'ecclesia.euclid.size', focus:'ecclesia.euclid.focus' };
+const STORAGE = { position:'ecclesia.euclid.position', size:'ecclesia.euclid.size', focus:'ecclesia.euclid.focus', theme:'ecclesia.euclid.theme' };
 let books = [], flatUnits = [], currentUnitIndex = 0, currentBookIndex = 0, saveTimer;
 const content = $('reader-content'), status = $('status');
 
@@ -65,19 +65,19 @@ function renderUnit(index, {updateHash=true, scroll=true}={}) {
   if (!flatUnits.length) return;
   index = Math.max(0, Math.min(flatUnits.length - 1, index)); currentUnitIndex=index;
   const {book,unit,bookIndex}=flatUnits[index]; currentBookIndex=bookIndex;
-  $('crumb-book').textContent=`BOOK ${book.roman || ROMANS[bookIndex]}`;
+  $('crumb-book').textContent=`Book ${book.roman || ROMANS[bookIndex]}`;$('progress-bar').style.width=`${((index+1)/flatUnits.length*100).toFixed(2)}%`;
   syncNavigation(bookIndex,unit);
   content.replaceChildren();
   const firstOfBook=(book.units || [])[0]===unit;
   if(firstOfBook){
     const intro=document.createElement('header'); intro.className='book-intro';
-    const kicker=document.createElement('div'); kicker.className='section-kicker'; safeText(kicker,`BOOK ${book.roman || ROMANS[bookIndex]} · EUCLID’S ELEMENTS`);
+    const kicker=document.createElement('div'); kicker.className='section-kicker'; safeText(kicker,'Euclid · Greek text');
     const h=document.createElement('h1'); safeText(h,`Book ${book.roman || ROMANS[bookIndex]}`);
     const sub=document.createElement('p'); sub.className='book-subtitle'; safeText(sub,book.title || 'The Elements'); intro.append(kicker,h,sub); content.append(intro);
   }
   const section=document.createElement('section'); section.className='units';
   const heading=document.createElement('h2'); heading.className='unit-heading';
-  const headingText=document.createElement('span'); safeText(headingText,displayTitle(unit)); heading.append(headingText);
+  const headingText=document.createElement('span'); safeText(headingText,navigationTitle(unit)); heading.append(headingText);
   const editorial=document.createElement('span'); editorial.className='editorial-mark'; safeText(editorial,'ED.'); heading.append(editorial); section.append(heading);
   for (const diagram of unit.diagrams || []) {
     const wrap=document.createElement('div'); wrap.className='diagram-wrap'; wrap.setAttribute('role','button'); wrap.tabIndex=0; wrap.setAttribute('aria-label',`Enlarge diagram: ${diagram.alt || 'geometric diagram'}`);
@@ -95,8 +95,8 @@ function renderUnit(index, {updateHash=true, scroll=true}={}) {
   });
   content.append(section); content.hidden=false; status.hidden=true;
   const pager=$('page-nav'); pager.hidden=false; pager.replaceChildren();
-  if(index>0){const prev=flatUnits[index-1],a=document.createElement('a');a.href=unitHref(prev.book,prev.unit);a.innerHTML=`<small>← PREVIOUS</small>${escapeHTML(displayTitle(prev.unit))}`;a.className='previous';pager.append(a);}
-  if(index<flatUnits.length-1){const next=flatUnits[index+1],a=document.createElement('a');a.href=unitHref(next.book,next.unit);a.innerHTML=`<small>NEXT →</small>${escapeHTML(displayTitle(next.unit))}`;a.className='next';pager.append(a);}
+  if(index>0){const prev=flatUnits[index-1],a=document.createElement('a');a.href=unitHref(prev.book,prev.unit);a.innerHTML=`<small>‹ Previous</small>${escapeHTML(navigationTitle(prev.unit))}`;a.className='previous';pager.append(a);}
+  if(index<flatUnits.length-1){const next=flatUnits[index+1],a=document.createElement('a');a.href=unitHref(next.book,next.unit);a.innerHTML=`<small>Next ›</small>${escapeHTML(navigationTitle(next.unit))}`;a.className='next';pager.append(a);}
   if(updateHash){const hash=unitHref(book,unit); if(location.hash!==hash) history.replaceState(null,'',hash);}
   if(scroll) window.scrollTo({top:0,behavior:'smooth'});
   clearTimeout(saveTimer); saveTimer=setTimeout(()=>{try{localStorage.setItem(STORAGE.position,JSON.stringify({book:book.number,unit:unit.id,title:`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`}));}catch{}},350);
@@ -107,9 +107,12 @@ function openDialog(id){const dialog=$(id);if(!dialog.open)dialog.showModal();}
 function restorePreferences(){try{const size=Number(localStorage.getItem(STORAGE.size));if(size>=1.15&&size<=2.05)document.documentElement.style.setProperty('--greek-size',`${size}rem`);if(localStorage.getItem(STORAGE.focus)==='1')setFocus(true);}catch{}}
 function setFocus(on){document.body.classList.toggle('focus-mode',on);$('focus-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem(STORAGE.focus,on?'1':'0');}catch{}}
 $('font-down').addEventListener('click',()=>changeFont(-.1)); $('font-up').addEventListener('click',()=>changeFont(.1));
-function changeFont(delta){const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--greek-size'))||1.55;const size=Math.min(2.05,Math.max(1.15,Math.round((current+delta)*100)/100));document.documentElement.style.setProperty('--greek-size',`${size}rem`);try{localStorage.setItem(STORAGE.size,String(size));}catch{}}
+function changeFont(delta){const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--greek-size'))||1.28;const size=Math.min(2.05,Math.max(1.15,Math.round((current+delta)*100)/100));document.documentElement.style.setProperty('--greek-size',`${size}rem`);try{localStorage.setItem(STORAGE.size,String(size));}catch{}}
 $('focus-toggle').addEventListener('click',()=>setFocus(!$('focus-toggle').matches('[aria-pressed="true"]')));
 $('about-open').addEventListener('click',()=>openDialog('about-dialog'));
+function setTheme(dark){document.documentElement.classList.toggle('dark',dark);const b=$('theme-toggle');b.setAttribute('aria-pressed',String(dark));b.setAttribute('aria-label',dark?'Light reading':'Dark reading');document.querySelector('meta[name="theme-color"]')?.setAttribute('content',dark?'#211e1a':'#f1e8d7');try{localStorage.setItem(STORAGE.theme,dark?'dark':'light');}catch{}}
+setTheme(document.documentElement.classList.contains('dark'));
+$('theme-toggle').addEventListener('click',()=>setTheme(!document.documentElement.classList.contains('dark')));
 $('contents-tree').addEventListener('click',e=>{const a=e.target.closest('a.contents-link');if(!a)return;e.preventDefault();$('contents-disclosure').open=false;location.hash=a.getAttribute('href').slice(1);});
 $('contents-disclosure').addEventListener('keydown',e=>{if(e.key==='Escape'&&$('contents-disclosure').open){e.preventDefault();$('contents-disclosure').open=false;$('contents-summary').focus();}});
 $('page-nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a){e.preventDefault();location.hash=a.getAttribute('href').slice(1);}});

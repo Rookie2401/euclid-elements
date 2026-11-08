@@ -1,23 +1,31 @@
 .euclid-golearn-dialog {
   width: min(34rem, calc(100vw - 2rem));
   max-height: min(80vh, 42rem);
-  padding: 1.25rem;
-  color: #e4d9c7;
-  background: #191613;
-  border: 1px solid #574a39;
-  border-radius: .75rem;
-  box-shadow: 0 1rem 4rem #0009;
-  font: 1rem/1.5 Georgia, serif;
+  padding: 1.6rem 1.75rem;
+  color: var(--ink, #292823);
+  background: var(--paper, #f1e8d7);
+  border: 1px solid var(--line, rgba(48, 36, 29, 0.15));
+  border-radius: 2px;
+  box-shadow: 0 24px 80px rgba(25, 22, 19, 0.28);
+  font: 400 15px/1.6 var(--book, Georgia, serif);
 }
-.euclid-golearn-dialog::backdrop { background: #090806b8; }
-.euclid-golearn-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.euclid-golearn-dialog h2 { margin: 0; font-size: 1.4rem; font-weight: 500; }
+.euclid-golearn-dialog::backdrop { background: rgba(25, 22, 19, 0.55); backdrop-filter: blur(2px); }
+.euclid-golearn-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--line, rgba(48, 36, 29, 0.15)); }
+.euclid-golearn-dialog h2 { margin: 0; font: 500 28px/1.1 var(--serif, Georgia, serif); }
 .euclid-golearn-dialog section { margin-top: 1rem; }
-.euclid-golearn-dialog label { display: grid; gap: .35rem; margin: .8rem 0; }
-.euclid-golearn-dialog input { width: 100%; padding: .6rem; color: inherit; background: #211d18; border: 1px solid #574a39; border-radius: .35rem; font: inherit; }
-.euclid-golearn-dialog button, .euclid-card-save { padding: .5rem .8rem; color: #e4d9c7; background: #30271d; border: 1px solid #c79b65; border-radius: .35rem; font: inherit; cursor: pointer; }
-.euclid-golearn-dialog button:hover, .euclid-card-save:hover { background: #403327; }
-.euclid-golearn-dialog [role="status"] { min-height: 1.5em; }
+.euclid-golearn-dialog label { display: grid; gap: .35rem; margin: .8rem 0; font: 400 11px var(--sans, sans-serif); letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #827968); }
+.euclid-golearn-dialog input { width: 100%; padding: .6rem .7rem; color: var(--ink, #292823); background: var(--paper-raised, #f6efe2); border: 1px solid var(--line, rgba(48, 36, 29, 0.15)); border-radius: 2px; font: 400 15px var(--book, Georgia, serif); text-transform: none; letter-spacing: 0; }
+.euclid-golearn-dialog button {
+  padding: .5rem .9rem;
+  color: var(--accent, #9d7640);
+  background: transparent;
+  border: 1px solid var(--line, rgba(48, 36, 29, 0.15));
+  border-radius: 2px;
+  font: 400 12px var(--sans, sans-serif);
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+.euclid-golearn-dialog button:hover { background: var(--accent-wash, rgba(157, 118, 64, 0.12)); }
+.euclid-golearn-dialog [role="status"] { min-height: 1.5em; color: var(--muted, #827968); }
 .euclid-golearn-dialog ul { display: grid; gap: .5rem; padding-inline-start: 1.4rem; }
 .euclid-golearn-dialog li { padding-block: .25rem; }
-.euclid-card-save { margin: .55rem 0 0; font-size: .85em; }

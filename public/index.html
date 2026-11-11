@@ -2,58 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Read the Greek text of Euclid’s Elements, arranged by book and proposition with diagrams from Heiberg’s edition.">
   <meta name="theme-color" content="#f1e8d7">
   <title>Euclid’s Elements — Ecclesia</title>
-  <script>try{if(localStorage.getItem('ecclesia.euclid.theme')==='dark')document.documentElement.classList.add('dark');}catch{}</script>
+  <script>try{var t=localStorage.getItem('ecclesia.euclid.theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark');if(localStorage.getItem('ecclesia.euclid.marks')==='off')document.documentElement.setAttribute('data-level-marks','off');}catch(e){}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500&family=Noto+Serif:ital,wght@0,400;0,500;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap">
-  <link rel="stylesheet" href="./reader.css?v=ecclesia-2">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&family=Noto+Serif:ital,wght@0,400;0,500;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap">
+  <link rel="stylesheet" href="./reader.css?v=library-1">
   <link rel="stylesheet" href="./golearn.css">
-  <script type="module" src="./reader.js?v=ecclesia-2"></script>
+  <script type="module" src="./reader.js?v=library-1"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="back" href="../" aria-label="Back to Ecclesia"><span aria-hidden="true">←</span> Ecclesia</a>
-    <div class="identity" aria-label="Current work"><span>Euclid</span><i aria-hidden="true">·</i><span>Elements</span><i aria-hidden="true">·</i><span id="crumb-book">Book I</span></div>
-    <div class="top-actions">
-      <button class="quiet-button" id="about-open" type="button">About</button>
-      <button class="quiet-button" id="saved-open" type="button" aria-label="Open saved words">Saved</button>
-      <button class="quiet-button" id="account-open" type="button">Sign in</button>
-      <button class="icon-button" id="theme-toggle" type="button" aria-label="Dark reading" aria-pressed="false" title="Light or dark reading">
-        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
-      </button>
-    </div>
-  </header>
-  <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
-  <main class="shell">
-    <section class="reading-area" aria-label="Euclid text">
-      <div class="reading-tools">
-        <span class="tools-spacer" aria-hidden="true"></span>
-        <details class="contents-disclosure" id="contents-disclosure">
-          <summary id="contents-summary" aria-label="Open table of contents"><span id="contents-current">Book I · Definitions</span><span class="contents-chevron" aria-hidden="true"></span></summary>
-          <nav id="contents-tree" class="contents-tree" aria-label="Euclid table of contents"></nav>
-        </details>
-        <div class="tools-right">
-          <button id="focus-toggle" class="tool-button" type="button" aria-pressed="false" title="Toggle focus mode">Focus</button>
-          <button id="font-down" class="tool-button font-button" type="button" aria-label="Decrease text size">A−</button><button id="font-up" class="tool-button font-button" type="button" aria-label="Increase text size">A+</button>
-        </div>
-      </div>
-      <div id="status" class="status" role="status" aria-live="polite">Opening the volume…</div>
-      <div id="reader-content" class="reader-content" hidden></div>
-      <nav id="page-nav" class="page-nav" aria-label="Previous and next section" hidden></nav>
-    </section>
-  </main>
-  <dialog id="about-dialog" class="dialog">
-    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
-    <p class="eyebrow">Text &amp; edition</p><h2>Euclid’s <i>Elements</i></h2>
-    <p>Greek text of the <i>Elements</i>, based on Johan Ludvig Heiberg’s 1883–88 edition. The transcription derives from the Perseus Digital Library and OpenGreekAndLatin canonical-greekLit project (CTS urn:cts:greekLit:tlg1799.tlg001) as adapted in the WesternCanon corpus.</p>
-    <p>Heiberg’s edition is public domain. The digital transcription is distributed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>. The source follows Heiberg’s editorial exclusions, omitting passages he marked for deletion. English book and section headings are editorial aids.</p>
-    <p>The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.</p>
-    <p class="source-line">Source data: <a href="https://github.com/Rookie2401/westerncanon" target="_blank" rel="noreferrer">Rookie2401/westerncanon</a>. Reader: <a href="https://github.com/Rookie2401/euclid-elements" target="_blank" rel="noreferrer">Rookie2401/euclid-elements</a></p>
-  </dialog>
+  <div id="app"><p class="status" id="status" role="status" aria-live="polite">Opening the volume…</p></div>
   <dialog id="diagram-dialog" class="diagram-dialog" aria-label="Enlarged diagram">
     <form method="dialog"><button class="dialog-close" aria-label="Close enlarged diagram">×</button></form>
     <figure><img id="large-diagram" alt=""><figcaption id="diagram-caption"></figcaption></figure>

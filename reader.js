@@ -1,131 +1,317 @@
+// Euclid's Elements, laid out as Biblia is: a library page (a tree that opens division → book → its sections and propositions),
+// a reading page (a slim header with the way back, where you are, and settings; the text; a pager fixed at the foot), and a
+// settings page. Routes: #/ (library), #/read/<book>/<unit> (reading), #/settings. Older links (#book-1/<unit>) still open.
 const $ = (id) => document.getElementById(id);
+const app = $('app');
 const ROMANS = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII'];
-const STORAGE = { position:'ecclesia.euclid.position', size:'ecclesia.euclid.size', focus:'ecclesia.euclid.focus', theme:'ecclesia.euclid.theme' };
-let books = [], flatUnits = [], currentUnitIndex = 0, currentBookIndex = 0, saveTimer, currentSites;
-const content = $('reader-content'), status = $('status');
+const STORAGE = { position:'ecclesia.euclid.position', size:'ecclesia.euclid.size', theme:'ecclesia.euclid.theme', marks:'ecclesia.euclid.marks', open:'ecclesia.euclid.open', spacing:'ecclesia.euclid.spacing' };
+/** The library's top level, as Biblia's testaments → divisions: the work, then the four traditional parts of the Elements. */
+const DIVISIONS = [
+  { id:'plane', title:'Plane Geometry', native:'Ἐπίπεδα', books:[1,2,3,4,5,6] },
+  { id:'arithmetic', title:'Arithmetic', native:'Ἀριθμητικά', books:[7,8,9] },
+  { id:'incommensurables', title:'Incommensurables', native:'Ἄλογα', books:[10] },
+  { id:'solid', title:'Solid Geometry', native:'Στερεά', books:[11,12,13] },
+];
+const SECTION_NATIVE = { definitions:'Ὅροι', postulates:'Αἰτήματα', 'common-notions':'Κοιναὶ ἔννοιαι' };
+const SECTION_NOUN = { definitions:'definitions', postulates:'postulates', 'common-notions':'common notions' };
+const ICON = {
+  back:'<path d="M15 6l-6 6 6 6"/>',
+  chev:'<path d="M9 6l6 6-6 6"/>',
+  account:'<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
+  settings:'<path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h8M16 17h4"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="17" r="2"/>',
+};
+const svg = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON[name]}</svg>`;
 
-function safeText(node, value) { node.textContent = value ?? ''; return node; }
-function unitHref(book, unit) { return `#book-${book.number}/${encodeURIComponent(unit.id)}`; }
-function sectionKey(unit){return unit.kind==='proposition'?'propositions':unit.kind;}
-function unitCount(unit){return (unit.entries||[]).length;}
-function propNumber(unit){return unit.id.match(/(?:prop|proposition)[-:]?(\d+)$/i)?.[1]||unit.title?.match(/\d+/)?.[0]||'';}
-function unitCountLabel(unit){const n=unitCount(unit),title=displayTitle(unit).toLowerCase();return `${n} ${title==='definitions'?'definitions':title==='postulates'?'postulates':title==='common notions'?'notions':'items'}`;}
-function navigationTitle(unit){return sectionKey(unit)==='propositions'?`Proposition ${propNumber(unit)}`:displayTitle(unit);}
-function contentsRow(label, meta, href, current=false){
-  const a=document.createElement('a');a.className=`contents-link${current?' is-current':''}`;a.href=href;a.textContent=label;
-  if(current)a.setAttribute('aria-current','page');
-  const count=document.createElement('span');count.className='contents-meta';count.textContent=meta;a.append(count);return a;
+let books = [], flatUnits = [], sources = {}, currentIndex = -1, saveTimer, currentSites;
+// GoLearn's bridge keeps hold of these two buttons and writes their labels ("Sign in to GoLearn", "Saved words (3)"), so they
+// live for the whole visit and are moved into whichever page shows them.
+const accountButton = Object.assign(document.createElement('button'), { type:'button', className:'linkbtn', id:'account-open', textContent:'Sign in to GoLearn' });
+const savedButton = Object.assign(document.createElement('button'), { type:'button', className:'btn', id:'saved-open', textContent:'Saved words' });
+
+// ───────────────────────────── small helpers ─────────────────────────────
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === false || v === null) continue;
+    if (k === 'class') el.className = v; else if (k === 'html') el.innerHTML = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of children.flat()) if (c !== undefined && c !== null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
 }
-function buildBookNav() {
-  flatUnits=[];const tree=$('contents-tree');tree.replaceChildren();
-  books.forEach((book,index)=>{
-    const units=book.units||[];units.forEach(unit=>flatUnits.push({book,unit,bookIndex:index}));
-    const bookDetails=document.createElement('details');bookDetails.className='contents-group contents-book';bookDetails.dataset.book=String(index);
-    const propositionCount=units.filter(u=>sectionKey(u)==='propositions').length;
-    const summary=document.createElement('summary');summary.innerHTML=`<span class="tree-chevron" aria-hidden="true"></span><span class="tree-title">Book ${book.roman||ROMANS[index]}</span><span class="contents-meta">${propositionCount} propositions</span>`;bookDetails.append(summary);
-    const children=document.createElement('div');children.className='contents-children';
-    const prelim=units.filter(u=>sectionKey(u)!=='propositions');
-    prelim.forEach(unit=>children.append(contentsRow(displayTitle(unit),unitCountLabel(unit),unitHref(book,unit))));
-    const props=units.filter(u=>sectionKey(u)==='propositions');
-    if(props.length){
-      const group=document.createElement('details');group.className='contents-group contents-propositions';
-      const head=document.createElement('summary');head.innerHTML=`<span class="tree-chevron" aria-hidden="true"></span><span class="tree-title">Propositions</span><span class="contents-meta">${props.length}</span>`;group.append(head);
-      const list=document.createElement('div');list.className='contents-children contents-proposition-list';
-      props.forEach(unit=>list.append(contentsRow(`Proposition ${propNumber(unit)}`,``,unitHref(book,unit))));group.append(list);children.append(group);
-    }
-    bookDetails.append(children);tree.append(bookDetails);
+const EL_UNITS = ['', 'α', 'β', 'γ', 'δ', 'ε', 'ϛ', 'ζ', 'η', 'θ'], EL_TENS = ['', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ϟ'], EL_HUNDREDS = ['', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω', 'ϡ'];
+/** Greek (Milesian) numeral with the keraia, as Biblia writes chapter numbers. */
+const greekNumeral = (n) => (n >= 1 && n <= 999 ? `${EL_HUNDREDS[Math.floor(n / 100)]}${EL_TENS[Math.floor((n % 100) / 10)]}${EL_UNITS[n % 10]}ʹ` : String(n));
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage may be off */ } } };
+const roman = (book, i = books.indexOf(book)) => book.roman || ROMANS[i];
+const isProp = (unit) => unit.kind === 'proposition';
+const propNumber = (unit) => Number(unit.id.match(/(?:prop|proposition)[-:]?(\d+)$/i)?.[1] || unit.title?.match(/\d+/)?.[0] || 0);
+const unitName = (unit) => (isProp(unit) ? `Proposition ${propNumber(unit)}` : unit.title || 'Definitions');
+const unitNative = (unit) => (isProp(unit) ? greekNumeral(propNumber(unit)) : SECTION_NATIVE[unit.kind] || '');
+const bookNative = (book) => `Στοιχείων ${greekNumeral(book.number)}`;
+const unitHref = (book, unit) => `#/read/${book.number}/${encodeURIComponent(unit.id)}`;
+const firstWords = (unit, n = 64) => { const t = unit.entries?.[0]?.paragraphs?.[0] || ''; return t.length > n ? `${t.slice(0, t.lastIndexOf(' ', n) > 20 ? t.lastIndexOf(' ', n) : n)} …` : t; };
+const propCount = (book) => (book.units || []).filter(isProp).length;
+
+// ───────────────────────────── settings ─────────────────────────────
+function themeMode() { const t = store.get(STORAGE.theme); return t === 'light' || t === 'dark' ? t : 'auto'; }
+function applyTheme() {
+  const mode = themeMode();
+  const dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', dark);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#211e1a' : '#f1e8d7');
+}
+function greekSize() { const s = Number(store.get(STORAGE.size)); return s >= 1.1 && s <= 2.1 ? s : 1.28; }
+function lineSpacing() { const s = Number(store.get(STORAGE.spacing)); return s >= 1.5 && s <= 2.3 ? s : 1.8; }
+function applyType() {
+  document.documentElement.style.setProperty('--greek-size', `${greekSize()}rem`);
+  document.documentElement.style.setProperty('--greek-leading', String(lineSpacing()));
+}
+function marksOn() { return store.get(STORAGE.marks) !== 'off'; }
+function applyMarks() { document.documentElement.setAttribute('data-level-marks', marksOn() ? 'on' : 'off'); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+applyTheme(); applyType(); applyMarks();
+
+/** Which library rows are open (a list of ids), remembered on the device; the four parts are open until closed. */
+function openSet() { try { const v = JSON.parse(store.get(STORAGE.open) || 'null'); if (Array.isArray(v)) return new Set(v); } catch { /* fall through */ } return new Set(['elements', ...DIVISIONS.map((d) => d.id)]); }
+function saveOpen(set) { store.set(STORAGE.open, JSON.stringify([...set])); }
+function lastPosition() { try { return JSON.parse(store.get(STORAGE.position) || 'null'); } catch { return null; } }
+function positionIndex(p) { return p ? flatUnits.findIndex((x) => String(x.book.number) === String(p.book) && x.unit.id === p.unit) : -1; }
+
+// ───────────────────────────── shared chrome ─────────────────────────────
+function topbar(current) {
+  return h('header', { class: 'topbar' },
+    h('a', { href: '#/', class: 'topbar__title', 'aria-label': 'Euclid, the library' }, 'Euclid'),
+    h('div', { class: 'topbar__spacer' }),
+    h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'GoLearn account', title: 'GoLearn account', html: svg('account'), onclick: () => accountButton.click() }),
+    h('a', { href: '#/settings', class: `iconbtn${current === 'settings' ? ' iconbtn--active' : ''}`, 'aria-label': 'Settings', title: 'Settings', ...(current === 'settings' ? { 'aria-current': 'page' } : {}), html: svg('settings') }));
+}
+function collapsible(open, inner) {
+  const box = h('div', { class: 'collapsible', 'data-open': String(open) }, h('div', { class: 'collapsible__inner', ...(open ? {} : { inert: true }) }, inner));
+  return box;
+}
+/** One folding row of the library: a head (chevron, English title, Greek title, count) over its children. */
+function libGroup(level, id, title, native, meta, children, opened, current = false) {
+  const head = h('button', { type: 'button', class: 'lib__head', 'aria-expanded': String(opened.has(id)) },
+    h('span', { class: `lib__chev${opened.has(id) ? ' lib__chev--open' : ''}`, 'aria-hidden': 'true', html: svg('chev') }),
+    h('span', { class: 'lib__title' }, title),
+    native ? h('span', { class: 'lib__native', lang: 'grc' }, native) : null,
+    h('span', { class: 'lib__meta' }, meta));
+  let body;
+  const group = h('div', { class: `lib__group lib__group--${level}${current ? ' lib__group--current' : ''}`, 'data-id': id }, head);
+  const build = () => h('div', { class: 'lib__children' }, children());
+  // the children are made when first opened: Book X alone has 116 rows
+  body = collapsible(opened.has(id), opened.has(id) ? build() : '');
+  group.append(body);
+  head.addEventListener('click', () => {
+    const open = !opened.has(id);
+    if (open) opened.add(id); else opened.delete(id);
+    saveOpen(opened);
+    const inner = body.firstElementChild;
+    if (open && !inner.childElementCount) inner.append(build());
+    body.dataset.open = String(open);
+    inner.toggleAttribute('inert', !open);
+    head.setAttribute('aria-expanded', String(open));
+    head.firstElementChild.classList.toggle('lib__chev--open', open);
   });
+  return group;
 }
-function syncNavigation(bookIndex, unit) {
-  const book=books[bookIndex],title=navigationTitle(unit);$('contents-current').textContent=`Book ${book.roman||ROMANS[bookIndex]} · ${title}`;
-  const disclosure=$('contents-disclosure');
-  document.querySelectorAll('.contents-link').forEach(a=>{const active=a.getAttribute('href')===unitHref(book,unit);a.classList.toggle('is-current',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-  document.querySelectorAll('.contents-book').forEach(d=>{d.classList.toggle('is-current',Number(d.dataset.book)===bookIndex);});
-  const activeBook=document.querySelector(`.contents-book[data-book="${bookIndex}"]`);if(activeBook)activeBook.open=true;
-  const propGroup=activeBook?.querySelector('.contents-propositions');if(propGroup)propGroup.open=sectionKey(unit)==='propositions';
-  disclosure.setAttribute('aria-label',`Contents, current location Book ${book.roman||ROMANS[bookIndex]}, ${title}`);
+
+// ───────────────────────────── the library (home) ─────────────────────────────
+function renderHome() {
+  currentIndex = -1; publishUnit(undefined);
+  document.title = 'Euclid’s Elements — Ecclesia';
+  const opened = openSet();
+  const at = lastPosition();
+  const atIndex = positionIndex(at);
+  const here = atIndex >= 0 ? flatUnits[atIndex] : undefined;
+  const entryFor = (book, unit) => {
+    const isAt = here && here.unit === unit;
+    const preview = isProp(unit) ? firstWords(unit) : `${unit.entries?.length || 0} ${SECTION_NOUN[unit.kind] || 'entries'}`;
+    return h('a', { href: unitHref(book, unit), role: 'listitem', class: `entry${isAt ? ' entry--at' : ''}${isProp(unit) ? ' entry--prop' : ''}`, 'aria-label': `Book ${roman(book)}, ${unitName(unit)}`, ...(isAt ? { 'aria-current': 'location' } : {}) },
+      h('span', { class: 'entry__num' }, unitName(unit)),
+      h('span', { class: 'entry__native', lang: 'grc' }, unitNative(unit)),
+      h('span', { class: 'entry__preview', ...(isProp(unit) ? { lang: 'grc' } : {}) }, preview));
+  };
+  const bookGroup = (book) => libGroup(3, `book-${book.number}`, `Book ${roman(book)}`, bookNative(book), `${propCount(book)} props`,
+    () => h('div', { class: 'entrylist', role: 'list', 'aria-label': `Book ${roman(book)} contents` }, h('p', { class: 'lib__subtitle' }, book.title), (book.units || []).map((u) => entryFor(book, u))),
+    opened, here?.book === book);
+  const divisionGroup = (d) => libGroup(2, d.id, d.title, d.native, `${d.books.length} ${d.books.length === 1 ? 'book' : 'books'}`,
+    () => d.books.map((n) => books.find((b) => b.number === n)).filter(Boolean).map(bookGroup), opened, !!here && d.books.includes(here.book.number));
+  const tree = h('nav', { class: 'lib', 'aria-label': 'Books' },
+    libGroup(1, 'elements', 'The Elements', 'Στοιχεῖα', `${books.length} books`, () => DIVISIONS.map(divisionGroup), opened));
+  const accountLine = h('p', { class: 'accountline' }, accountButton);
+  const cont = here ? h('a', { class: 'home__continue', href: unitHref(here.book, here.unit) },
+    h('span', { class: 'home__continue-label' }, 'Continue reading'),
+    h('div', { class: 'home__continue-ref' }, `Book ${roman(here.book)} · ${unitName(here.unit)}`),
+    h('div', { class: 'home__continue-sub', lang: 'grc' }, `${bookNative(here.book)} · ${unitNative(here.unit)}`)) : null;
+  const about = h('div', { class: 'home__about' },
+    h('p', {}, 'Text: Heiberg’s edition (1883–88, public domain), in the Perseus Digital Library / OpenGreekAndLatin transcription (CC BY-SA 4.0), with the diagrams of Heiberg’s edition. Every word is read by GoLearn’s Greek analyser; nothing here has been reviewed by a classicist. ', h('a', { href: '#/settings' }, 'Sources and limits')),
+    h('p', {}, 'Part of ', h('a', { href: '../' }, 'Ecclesia'), '’s library.'));
+  app.replaceChildren(h('div', {}, topbar('home'), h('main', { class: 'page home route-fade' },
+    h('h1', { class: 'home__title' }, h('span', { class: 'gr', lang: 'grc' }, 'Εὐκλείδου Στοιχεῖα'), 'Euclid’s Elements'),
+    h('p', { class: 'home__subtitle' }, 'The Greek text of Heiberg’s edition, with GoLearn’s analysis of every word underneath.'),
+    h('div', { class: 'home__rule' }), accountLine, cont, tree, about)));
+  window.scrollTo(0, 0);
 }
-function activateWordMarkup(paragraph, text, unitTitle, sites) {
-  // Keep the transcription as text nodes. Greek words become small buttons for dictionary hooks.
+
+// ───────────────────────────── the reading page ─────────────────────────────
+function activateWordMarkup(paragraph, text, reference, sites) {
+  // Greek words become buttons for GoLearn's card; everything else stays text.
   const source = String(text ?? '');
   const chunks = source.match(/[\p{Script=Greek}\p{M}]+(?:[’'ʼ][\p{Script=Greek}\p{M}]+)?[’'ʼ]?|[^\p{Script=Greek}\p{M}]+/gu) || [source];
-  let sourceOffset = 0;
+  let offset = 0;
   for (const chunk of chunks) {
     if (/\p{Script=Greek}/u.test(chunk)) {
-      const button=document.createElement('button'); button.className='greek-word'; button.type='button'; button.dataset.word=chunk;
-      button.textContent=chunk; button.setAttribute('aria-label',`Look up ${chunk}`);
-      const start=source.indexOf(chunk,sourceOffset); sourceOffset=Math.max(sourceOffset,start)+chunk.length;
-      sites?.push({el:button,sentence:source,start,end:start+chunk.length,surface:chunk});
-      button.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('euclid:word',{detail:{word:chunk,context:{sentence:source,start,end:start+chunk.length,reference:unitTitle},element:button}})));
+      const start = source.indexOf(chunk, offset); offset = Math.max(offset, start) + chunk.length;
+      const button = h('button', { type: 'button', class: 'greek-word', 'data-word': chunk, 'aria-label': `Look up ${chunk}` }, chunk);
+      sites.push({ el: button, sentence: source, start, end: start + chunk.length, surface: chunk });
+      button.addEventListener('click', () => document.dispatchEvent(new CustomEvent('euclid:word', { detail: { word: chunk, context: { sentence: source, start, end: start + chunk.length, reference }, element: button } })));
       paragraph.append(button);
-    } else { paragraph.append(document.createTextNode(chunk)); sourceOffset+=chunk.length; }
+    } else { paragraph.append(chunk); offset += chunk.length; }
   }
 }
-function displayTitle(unit) { return unit.title || (unit.kind === 'definitions' ? 'Definitions' : unit.kind === 'postulates' ? 'Postulates' : unit.kind === 'common-notions' ? 'Common Notions' : 'Propositions'); }
-function renderUnit(index, {updateHash=true, scroll=true}={}) {
-  if (!flatUnits.length) return;
-  index = Math.max(0, Math.min(flatUnits.length - 1, index)); currentUnitIndex=index;
-  const {book,unit,bookIndex}=flatUnits[index]; currentBookIndex=bookIndex;
-  $('crumb-book').textContent=`Book ${book.roman || ROMANS[bookIndex]}`;$('progress-bar').style.width=`${((index+1)/flatUnits.length*100).toFixed(2)}%`;
-  syncNavigation(bookIndex,unit);
-  content.replaceChildren();
-  const firstOfBook=(book.units || [])[0]===unit;
-  if(firstOfBook){
-    const intro=document.createElement('header'); intro.className='book-intro';
-    const kicker=document.createElement('div'); kicker.className='section-kicker'; safeText(kicker,'Euclid · Greek text');
-    const h=document.createElement('h1'); safeText(h,`Book ${book.roman || ROMANS[bookIndex]}`);
-    const sub=document.createElement('p'); sub.className='book-subtitle'; safeText(sub,book.title || 'The Elements'); intro.append(kicker,h,sub); content.append(intro);
-  }
-  const section=document.createElement('section'); section.className='units';
-  const heading=document.createElement('h2'); heading.className='unit-heading';
-  const headingText=document.createElement('span'); safeText(headingText,navigationTitle(unit)); heading.append(headingText);
-  const editorial=document.createElement('span'); editorial.className='editorial-mark'; safeText(editorial,'ED.'); heading.append(editorial); section.append(heading);
+function publishUnit(detail) { currentSites = detail; document.dispatchEvent(new CustomEvent('euclid:unit', { detail })); }
+
+function renderReader(index) {
+  index = Math.max(0, Math.min(flatUnits.length - 1, index));
+  const { book, unit } = flatUnits[index];
+  const sameBook = currentIndex >= 0 && flatUnits[currentIndex]?.book === book;
+  currentIndex = index;
+  const bookUnits = book.units || [];
+  const place = bookUnits.indexOf(unit) + 1;
+  const reference = `Book ${roman(book)} · ${unitName(unit)}`;
+  document.title = `${reference} — Euclid’s Elements`;
+
+  const header = h('header', { class: 'reader__header' },
+    h('div', { class: 'reader__header-inner' },
+      h('a', { href: '#/', class: 'iconbtn', 'aria-label': 'The library', title: 'The library', html: svg('back') }),
+      h('div', { class: 'reader__headbtn' },
+        h('span', { class: 'reader__crumb' }, isProp(unit) ? `Book ${roman(book)} · ${propNumber(unit)} / ${propCount(book)}` : `Book ${roman(book)} · ${unitName(unit)}`),
+        h('span', { class: 'reader__chapter', lang: 'grc' }, `${bookNative(book)} · ${unitNative(unit)}`)),
+      h('div', { class: 'topbar__spacer' }),
+      h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'GoLearn account', title: 'GoLearn account', html: svg('account'), onclick: () => accountButton.click() }),
+      h('a', { href: '#/settings', class: 'iconbtn', 'aria-label': 'Settings', title: 'Settings', html: svg('settings') })),
+    h('div', { class: 'reader__progress', 'aria-hidden': 'true' }, h('span', { style: `width:${((index + 1) / flatUnits.length * 100).toFixed(2)}%` })));
+
+  const sites = [];
+  const col = h('main', { class: 'reader__col' },
+    h('div', { class: 'reader__title' }, reference),
+    h('div', { class: 'period' }, isProp(unit) ? 'Read as Euclid’s Greek (Heiberg’s text); the heading is editorial.' : `Read as Euclid’s Greek (Heiberg’s text). ${book.title}.`));
+  if (place === 1 && !sameBook) col.append(h('p', { class: 'book-subtitle' }, `Book ${roman(book)}: ${book.title}`));
   for (const diagram of unit.diagrams || []) {
-    const wrap=document.createElement('div'); wrap.className='diagram-wrap'; wrap.setAttribute('role','button'); wrap.tabIndex=0; wrap.setAttribute('aria-label',`Enlarge diagram: ${diagram.alt || 'geometric diagram'}`);
-    const img=document.createElement('img'); img.src=new URL(`./${diagram.src}`,document.baseURI).href; img.alt=diagram.alt || 'Geometric diagram from Heiberg’s edition'; img.loading='lazy';
-    img.addEventListener('error',()=>{wrap.replaceChildren(); wrap.className='diagram-wrap diagram-missing'; wrap.removeAttribute('role'); wrap.removeAttribute('tabindex'); safeText(wrap,'Diagram image unavailable.');});
-    const caption=document.createElement('p'); caption.className='diagram-caption'; safeText(caption,diagram.citation || diagram.alt || 'Heiberg, Elements'); wrap.append(img,caption);
-    const enlarge=()=>{ $('large-diagram').src=img.src; $('large-diagram').alt=img.alt; $('diagram-caption').textContent=caption.textContent; $('diagram-dialog').showModal(); };
-    wrap.addEventListener('click',enlarge); wrap.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();enlarge();}}); section.append(wrap);
+    const img = h('img', { src: new URL(`./${diagram.src}`, document.baseURI).href, alt: diagram.alt || 'Geometric diagram from Heiberg’s edition', loading: 'lazy' });
+    const caption = h('p', { class: 'diagram-caption' }, diagram.citation || diagram.alt || 'Heiberg, Elements');
+    const wrap = h('div', { class: 'diagram-wrap', role: 'button', tabindex: '0', 'aria-label': `Enlarge diagram: ${diagram.alt || 'geometric diagram'}` }, img, caption);
+    img.addEventListener('error', () => { wrap.replaceChildren('Diagram image unavailable.'); wrap.className = 'diagram-wrap diagram-missing'; wrap.removeAttribute('role'); wrap.removeAttribute('tabindex'); });
+    const enlarge = () => { $('large-diagram').src = img.src; $('large-diagram').alt = img.alt; $('diagram-caption').textContent = caption.textContent; $('diagram-dialog').showModal(); };
+    wrap.addEventListener('click', enlarge);
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enlarge(); } });
+    col.append(wrap);
   }
-  const sites=[];
-  (unit.entries || []).forEach(entry=>{
-    const article=document.createElement('article'); article.className='entry'; article.id=entry.id;
-    const h=document.createElement('h3'); safeText(h,entry.title || ''); article.append(h);
-    (entry.paragraphs || []).forEach(text=>{const p=document.createElement('p'); activateWordMarkup(p,text,`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`,sites); article.append(p);});
-    section.append(article);
-  });
-  content.append(section); content.hidden=false; status.hidden=true;
-  // GoLearn paints each word's knowledge level on these buttons while the learner is signed in.
-  currentSites={key:`${book.number}/${unit.id}`,sites};document.dispatchEvent(new CustomEvent('euclid:unit',{detail:currentSites}));
-  const pager=$('page-nav'); pager.hidden=false; pager.replaceChildren();
-  if(index>0){const prev=flatUnits[index-1],a=document.createElement('a');a.href=unitHref(prev.book,prev.unit);a.innerHTML=`<small>‹ Previous</small>${escapeHTML(navigationTitle(prev.unit))}`;a.className='previous';pager.append(a);}
-  if(index<flatUnits.length-1){const next=flatUnits[index+1],a=document.createElement('a');a.href=unitHref(next.book,next.unit);a.innerHTML=`<small>Next ›</small>${escapeHTML(navigationTitle(next.unit))}`;a.className='next';pager.append(a);}
-  if(updateHash){const hash=unitHref(book,unit); if(location.hash!==hash) history.replaceState(null,'',hash);}
-  if(scroll) window.scrollTo({top:0,behavior:'smooth'});
-  clearTimeout(saveTimer); saveTimer=setTimeout(()=>{try{localStorage.setItem(STORAGE.position,JSON.stringify({book:book.number,unit:unit.id,title:`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`}));}catch{}},350);
+  const prose = h('div', { class: 'prose', lang: 'grc' });
+  for (const entry of unit.entries || []) {
+    const article = h('article', { class: 'entry-text', id: entry.id });
+    if (!isProp(unit)) article.append(h('h3', {}, entry.title || ''));
+    for (const text of entry.paragraphs || []) { const p = h('p'); activateWordMarkup(p, text, reference, sites); article.append(p); }
+    prose.append(article);
+  }
+  col.append(prose);
+
+  const prev = flatUnits[index - 1], next = flatUnits[index + 1];
+  const navBtn = (dir, target) => target
+    ? h('a', { class: `reader__nav-btn reader__nav-btn--${dir}`, href: unitHref(target.book, target.unit) }, h('span', { class: 'reader__nav-dir' }, dir === 'prev' ? 'Previous' : 'Next'), h('span', { class: 'reader__nav-ref' }, target.book === book ? unitName(target.unit) : `Book ${roman(target.book)} · ${unitName(target.unit)}`))
+    : h('span', { class: `reader__nav-btn reader__nav-btn--${dir} is-disabled`, 'aria-disabled': 'true' }, h('span', { class: 'reader__nav-dir' }, dir === 'prev' ? 'Previous' : 'Next'));
+  const nav = h('nav', { class: 'reader__nav', 'aria-label': 'Previous and next' }, h('div', { class: 'reader__nav-inner' }, navBtn('prev', prev), navBtn('next', next)));
+
+  app.replaceChildren(h('div', { class: 'reader' }, header, col, nav));
+  window.scrollTo(0, 0);
+  publishUnit({ key: `${book.number}/${unit.id}`, sites });
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => store.set(STORAGE.position, JSON.stringify({ book: book.number, unit: unit.id, title: reference })), 350);
 }
-function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function route(){const hash=decodeURIComponent(location.hash.slice(1));const match=hash.match(/^book-(\d+)(?:\/(.+))?$/);if(!match){renderUnit(0,{updateHash:true,scroll:true});return;}const bookIndex=Math.max(0,books.findIndex(b=>String(b.number)===match[1]));let index=flatUnits.findIndex(x=>x.bookIndex===bookIndex && x.unit.id===match[2]);if(index<0)index=flatUnits.findIndex(x=>x.bookIndex===bookIndex);renderUnit(index<0?0:index,{updateHash:false,scroll:true});}
-function openDialog(id){const dialog=$(id);if(!dialog.open)dialog.showModal();}
-function restorePreferences(){try{const size=Number(localStorage.getItem(STORAGE.size));if(size>=1.15&&size<=2.05)document.documentElement.style.setProperty('--greek-size',`${size}rem`);if(localStorage.getItem(STORAGE.focus)==='1')setFocus(true);}catch{}}
-function setFocus(on){document.body.classList.toggle('focus-mode',on);$('focus-toggle').setAttribute('aria-pressed',String(on));try{localStorage.setItem(STORAGE.focus,on?'1':'0');}catch{}}
-$('font-down').addEventListener('click',()=>changeFont(-.1)); $('font-up').addEventListener('click',()=>changeFont(.1));
-function changeFont(delta){const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--greek-size'))||1.28;const size=Math.min(2.05,Math.max(1.15,Math.round((current+delta)*100)/100));document.documentElement.style.setProperty('--greek-size',`${size}rem`);try{localStorage.setItem(STORAGE.size,String(size));}catch{}}
-$('focus-toggle').addEventListener('click',()=>setFocus(!$('focus-toggle').matches('[aria-pressed="true"]')));
-$('about-open').addEventListener('click',()=>openDialog('about-dialog'));
-function setTheme(dark){document.documentElement.classList.toggle('dark',dark);const b=$('theme-toggle');b.setAttribute('aria-pressed',String(dark));b.setAttribute('aria-label',dark?'Light reading':'Dark reading');document.querySelector('meta[name="theme-color"]')?.setAttribute('content',dark?'#211e1a':'#f1e8d7');try{localStorage.setItem(STORAGE.theme,dark?'dark':'light');}catch{}}
-setTheme(document.documentElement.classList.contains('dark'));
-$('theme-toggle').addEventListener('click',()=>setTheme(!document.documentElement.classList.contains('dark')));
-$('contents-tree').addEventListener('click',e=>{const a=e.target.closest('a.contents-link');if(!a)return;e.preventDefault();$('contents-disclosure').open=false;location.hash=a.getAttribute('href').slice(1);});
-$('contents-disclosure').addEventListener('keydown',e=>{if(e.key==='Escape'&&$('contents-disclosure').open){e.preventDefault();$('contents-disclosure').open=false;$('contents-summary').focus();}});
-$('page-nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a){e.preventDefault();location.hash=a.getAttribute('href').slice(1);}});
-document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||$('contents-disclosure').open||e.altKey||e.ctrlKey||e.metaKey||e.target.matches('input,textarea,select,button'))return;if(e.key==='ArrowLeft'&&currentUnitIndex>0)location.hash=unitHref(flatUnits[currentUnitIndex-1].book,flatUnits[currentUnitIndex-1].unit).slice(1);if(e.key==='ArrowRight'&&currentUnitIndex<flatUnits.length-1)location.hash=unitHref(flatUnits[currentUnitIndex+1].book,flatUnits[currentUnitIndex+1].unit).slice(1);});
-window.addEventListener('hashchange',route);
-restorePreferences();
-try{const module=await import('./golearn.js?v=biblia-golearn-4');if(module.initGoLearn)await module.initGoLearn({wordEvent:'euclid:word',currentUnit:()=>currentSites,accountButton:$('account-open'),savedButton:$('saved-open')});}catch(error){console.info('GoLearn account and word tools are not available yet.',error);}
-try{
-  const response=await fetch('./data/elements.json'); if(!response.ok)throw new Error(`The text file returned ${response.status}.`);
-  const data=await response.json(); books=data.books||[];if(!books.length)throw new Error('No books were found in the text file.');buildBookNav();restorePreferences();
-  if(location.hash)route();else{let previous;try{previous=JSON.parse(localStorage.getItem(STORAGE.position)||'null');}catch{}const idx=previous?flatUnits.findIndex(x=>String(x.book.number)===String(previous.book)&&x.unit.id===previous.unit):-1;renderUnit(idx>=0?idx:0,{updateHash:true,scroll:false});}
-}catch(error){status.classList.add('error');status.textContent='The Greek text could not be opened. Please refresh the page, or check that the Elements data file is available.';console.error(error);}
+
+// ───────────────────────────── settings ─────────────────────────────
+function renderSettings() {
+  currentIndex = -1; publishUnit(undefined);
+  document.title = 'Settings — Euclid’s Elements';
+  const pill = (label, pressed, onclick) => h('button', { type: 'button', class: 'pill', 'aria-pressed': String(pressed), onclick }, label);
+  const themes = h('div', { class: 'pills', role: 'group', 'aria-label': 'Theme' });
+  const drawThemes = () => themes.replaceChildren(...['auto', 'light', 'dark'].map((m) => pill(m, themeMode() === m, () => { store.set(STORAGE.theme, m); applyTheme(); drawThemes(); })));
+  drawThemes();
+  const range = (label, value, min, max, step, unit, set) => {
+    const cap = h('span', { class: 'cap' });
+    const show = (v) => { cap.textContent = `${label} · ${unit(v)}`; };
+    const input = h('input', { type: 'range', min, max, step, value, oninput: (e) => { set(Number(e.target.value)); show(Number(e.target.value)); } });
+    show(value);
+    return h('label', { class: 'field' }, cap, input);
+  };
+  const sample = h('p', { class: 'settings__sample', lang: 'grc' }, 'σημεῖόν ἐστιν, οὗ μέρος οὐθέν.');
+  const marks = h('label', { class: 'toggle' },
+    h('input', { type: 'checkbox', ...(marksOn() ? { checked: true } : {}), onchange: (e) => { store.set(STORAGE.marks, e.target.checked ? 'on' : 'off'); applyMarks(); } }),
+    h('span', {}, 'Mark the words by how well I know them (only while signed in)'));
+  const section = (title, ...body) => h('section', { class: 'card' }, h('h2', {}, title), ...body);
+  const about = sources?.about || {};
+  app.replaceChildren(h('div', { class: 'settings' }, topbar('settings'), h('main', { class: 'page screen' },
+    h('h1', {}, 'Settings'),
+    section('Reading',
+      h('div', { class: 'field' }, h('span', { class: 'cap' }, 'Theme'), themes),
+      range('Greek size', Math.round(greekSize() * 16), 18, 34, 1, (v) => `${v}px`, (v) => { store.set(STORAGE.size, String(v / 16)); applyType(); }),
+      range('Line spacing', lineSpacing(), 1.5, 2.3, 0.05, (v) => v.toFixed(2), (v) => { store.set(STORAGE.spacing, String(v)); applyType(); }),
+      sample, marks,
+      h('button', { type: 'button', class: 'btn', onclick: () => { for (const k of [STORAGE.theme, STORAGE.size, STORAGE.spacing, STORAGE.marks]) { try { localStorage.removeItem(k); } catch { /* ignore */ } } applyTheme(); applyType(); applyMarks(); renderSettings(); } }, 'Reset settings')),
+    section('Account',
+      h('p', {}, 'Sign in with your GoLearn account to record the words you look up and mark; they reach GoReview from the same account. Until you do, this is a reader only.'),
+      h('div', { class: 'settings__row' }, accountButton, savedButton)),
+    section('Sources & licences',
+      h('p', {}, 'Greek text of the ', h('i', {}, 'Elements'), ', based on Johan Ludvig Heiberg’s 1883–88 edition. The transcription derives from the Perseus Digital Library and OpenGreekAndLatin canonical-greekLit project (CTS urn:cts:greekLit:tlg1799.tlg001) as adapted in the WesternCanon corpus.'),
+      h('p', {}, 'Heiberg’s edition is public domain. The digital transcription is distributed under ', h('a', { href: 'https://creativecommons.org/licenses/by-sa/4.0/', target: '_blank', rel: 'noreferrer' }, 'CC BY-SA 4.0'), '. The source follows Heiberg’s editorial exclusions, omitting passages he marked for deletion. English book and section headings, and the four parts of the library, are editorial aids.'),
+      h('p', {}, 'The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.'),
+      h('p', {}, 'Word analysis: GoLearn’s Greek analyser and its form index (Wiktionary-derived). It has not been reviewed by a classicist.'),
+      h('p', { class: 'source-line' }, 'Source data: ', h('a', { href: 'https://github.com/Rookie2401/westerncanon', target: '_blank', rel: 'noreferrer' }, 'Rookie2401/westerncanon'), '. Reader: ', h('a', { href: 'https://github.com/Rookie2401/euclid-elements', target: '_blank', rel: 'noreferrer' }, 'Rookie2401/euclid-elements'), '.'),
+      about.edition ? h('p', { class: 'source-line' }, `Edition: ${about.edition}.`) : null),
+    h('p', { class: 'settings__back' }, h('a', { href: '../' }, '← Ecclesia')))));
+  window.scrollTo(0, 0);
+}
+
+// ───────────────────────────── routing ─────────────────────────────
+function route() {
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const legacy = hash.match(/^book-(\d+)(?:\/(.+))?$/);
+  if (legacy) { // links from before the library page
+    const b = books.find((x) => String(x.number) === legacy[1]);
+    const u = b && ((b.units || []).find((x) => x.id === legacy[2]) || b.units?.[0]);
+    if (b && u) { location.replace(unitHref(b, u)); return; }
+  }
+  const read = hash.match(/^\/read\/(\d+)\/(.+)$/);
+  if (read) {
+    let index = flatUnits.findIndex((x) => String(x.book.number) === read[1] && x.unit.id === read[2]);
+    if (index < 0) index = flatUnits.findIndex((x) => String(x.book.number) === read[1]);
+    if (index >= 0) { renderReader(index); return; }
+  }
+  if (hash === '/settings') { renderSettings(); return; }
+  renderHome();
+}
+document.addEventListener('keydown', (e) => {
+  if (currentIndex < 0 || document.querySelector('dialog[open]') || e.altKey || e.ctrlKey || e.metaKey || e.target.matches('input,textarea,select')) return;
+  const go = (i) => { const t = flatUnits[i]; if (t) location.hash = unitHref(t.book, t.unit).slice(1); };
+  if (e.key === 'ArrowLeft') go(currentIndex - 1);
+  if (e.key === 'ArrowRight') go(currentIndex + 1);
+});
+window.addEventListener('hashchange', route);
+
+try {
+  const module = await import('./golearn.js?v=biblia-golearn-4');
+  if (module.initGoLearn) await module.initGoLearn({ wordEvent: 'euclid:word', currentUnit: () => currentSites, accountButton, savedButton });
+} catch (error) { console.info('GoLearn account and word tools are not available yet.', error); }
+try {
+  const response = await fetch('./data/elements.json');
+  if (!response.ok) throw new Error(`The text file returned ${response.status}.`);
+  const data = await response.json();
+  books = data.books || []; sources = data.sources || {};
+  if (!books.length) throw new Error('No books were found in the text file.');
+  books.forEach((book) => (book.units || []).forEach((unit) => flatUnits.push({ book, unit })));
+  route();
+} catch (error) {
+  app.replaceChildren(h('p', { class: 'status error', role: 'status' }, 'The Greek text could not be opened. Please refresh the page, or check that the Elements data file is available.'));
+  console.error(error);
+}

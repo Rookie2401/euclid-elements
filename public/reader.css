@@ -235,6 +235,14 @@ a { color: inherit; }
   transition: background 0.12s, color 0.12s;
 }
 .greek-word:hover, .greek-word:focus-visible { background: var(--accent-wash); color: var(--accent); outline: none; }
+/* GoLearn's word marks (signed in): New = light blue, Seen = heavy underline, Recognized = lighter, Familiar = faint, Known = nothing. */
+.greek-word[data-level] { text-underline-offset: 0.2em; }
+.greek-word[data-level="new"] { background-color: rgba(173, 216, 230, 0.45); }
+.greek-word[data-level="seen"] { text-decoration: underline solid 2px; text-decoration-color: color-mix(in srgb, currentColor 80%, transparent); }
+.greek-word[data-level="recognized"] { text-decoration: underline solid 1.25px; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
+.greek-word[data-level="familiar"] { text-decoration: underline solid 0.75px; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); }
+html.dark .greek-word[data-level="new"] { background-color: rgba(110, 165, 205, 0.32); }
+.greek-word[data-level]:hover, .greek-word[data-level]:focus-visible { background: var(--accent-wash); }
 
 /* Diagrams */
 .diagram-wrap { margin: 8px 0 34px; text-align: center; cursor: zoom-in; }

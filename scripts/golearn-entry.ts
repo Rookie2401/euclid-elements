@@ -12,6 +12,8 @@ import { createAccountService } from "../../go-v0/packages/biblia/src/account";
 import { accountRecorder, APP_VERSION, READER_ID } from "../../go-v0/packages/biblia/src/repo";
 import { createEventQueue } from "../../go-v0/packages/biblia/src/queue";
 import { buildAssistanceEvent, buildMarkEvent, buildSelectionEvent } from "../../go-v0/packages/golearn-extension/src/store";
+import { createLevels, type LevelSite } from "../../go-v0/packages/biblia/src/levels";
+import type { KnowledgeLevel } from "../../go-v0/packages/repository-contract/src/knowledge-levels";
 
 const SERVICE_URL = "https://go-v0.onrender.com";
 const SAVED_KEY = "euclid-elements:saved-words";
@@ -33,6 +35,37 @@ let savedDialog: HTMLDialogElement | undefined;
 type WordContext = { sentence?: string; start?: number; end?: number; reference?: string; varietyId?: string };
 type WordDetail = { word: string; context?: WordContext; element?: HTMLElement };
 type SavedWord = { word: string; context?: WordContext; savedAt: string };
+/** A word button of the unit on screen, as the reader hands it over (`euclid:unit`). */
+type UnitWord = { el: HTMLElement; sentence: string; start: number; end: number; surface: string };
+type UnitDetail = { key: string; sites: UnitWord[] };
+
+// GoLearn's word marks on the page, drawn by Biblia's level painter (the same rules and the same look): New = light blue,
+// Seen = heavy underline, Recognized = lighter, Familiar = faint, Known and Automatic = nothing. Only while signed in.
+let levels: ReturnType<typeof createLevels> | undefined;
+let currentUnit: UnitDetail | undefined;
+let unitGeneration = 0;
+const siteByEl = new WeakMap<Element, LevelSite>();
+
+function showUnit(detail: UnitDetail | undefined): void {
+  currentUnit = detail;
+  const generation = ++unitGeneration;
+  if (!levels) return;
+  if (!detail || !account?.session()) { void levels.setChapter(undefined, []); return; }
+  const sites: LevelSite[] = detail.sites.map((word) => {
+    const site: LevelSite = { el: word.el, lang: "el", sentence: word.sentence, start: word.start, end: word.end, surface: word.surface, varietyId: "el-koi" };
+    siteByEl.set(word.el, site);
+    return site;
+  });
+  // The Greek index shards must hold every word first, or a word is asked about by its form alone and a lemma mark is missed.
+  void greekReady.then(async () => {
+    const adapter = getAnalyser("el");
+    const keys = [...new Set(detail.sites.flatMap((word) => adapter?.tokenize(word.surface).filter((token) => token.isWord).map((token) => token.normalized) ?? []))];
+    await Promise.all(greekLoaders.map((loader) => loader.ensure(keys)));
+  }).catch(() => undefined).then(() => {
+    if (generation !== unitGeneration) return;
+    void levels?.setChapter(detail.key, sites);
+  });
+}
 
 function addStylesheet(): void {
   const href = new URL("./golearn.css", import.meta.url).href;
@@ -251,6 +284,7 @@ function openWordReady(detail: WordDetail): void {
       onRate: (mark) => {
         if (!account?.session()) { CARD.setFeedback("Sign in to GoLearn to sync knowledge marks."); return; }
         knowledgeMutation++;
+        levels?.mark(model.itemIds, mark as KnowledgeLevel, new Date().toISOString());
         CARD.setFeedback("Saving your knowledge level…");
         void recordInteraction(model, detail, "mark", mark);
       },
@@ -258,6 +292,7 @@ function openWordReady(detail: WordDetail): void {
     },
   });
   activeModel = model;
+  noteLookup(model, detail);
   // The common GoLearn card starts with no learner profile. Populate it from the
   // signed-in Repository so a saved knowledge level survives closing the card.
   void loadKnowledge(model);
@@ -270,6 +305,13 @@ function openWordReady(detail: WordDetail): void {
   const card = root.querySelector(".card");
   card?.append(save);
   void recordInteraction(model, detail, "selection");
+}
+
+function noteLookup(model: ReturnType<typeof parseSelection>, detail: WordDetail): void {
+  const site = detail.element ? siteByEl.get(detail.element) : undefined;
+  if (!levels || !site || !account?.session()) return;
+  levels.learn(site, model.itemIds);
+  levels.met(model.itemIds);
 }
 
 async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<void> {
@@ -325,6 +367,8 @@ async function recordInteraction(model: ReturnType<typeof parseSelection>, detai
   try {
     const result = await recorder.record([event]);
     if (activeModel !== model || !CARD.isOpen()) return;
+    if (!result.ok && kind === "mark") levels?.forget(model.itemIds);
+    if (result.ok) void levels?.refresh(model.itemIds);
     if (!result.ok) CARD.setFeedback(result.message || "GoLearn could not save this activity.");
     else {
       if (kind === "mark") CARD.update({ rated: value as Parameters<typeof buildMarkEvent>[1] });
@@ -335,7 +379,7 @@ async function recordInteraction(model: ReturnType<typeof parseSelection>, detai
   }
 }
 
-export async function initGoLearn(options: { accountButton: HTMLElement; savedButton: HTMLElement }): Promise<void> {
+export async function initGoLearn(options: { accountButton: HTMLElement; savedButton: HTMLElement; currentUnit?: () => UnitDetail | undefined }): Promise<void> {
   addStylesheet();
   accountButton = options.accountButton as HTMLButtonElement;
   savedButton = options.savedButton as HTMLButtonElement;
@@ -355,6 +399,19 @@ export async function initGoLearn(options: { accountButton: HTMLElement; savedBu
   savedButton.addEventListener("click", showSaved);
   renderSaved(); updateAccountButton();
   account.subscribe(updateAccountButton);
+  levels = createLevels({ win: window, doc: document, api: () => (account?.session() ? account.api() : undefined), onAuthExpired: () => account?.expire() });
+  let wasSignedIn = false;
+  const followAccount = () => {
+    const signedIn = !!account?.session();
+    if (signedIn === wasSignedIn) return;
+    wasSignedIn = signedIn;
+    if (!signedIn) levels?.clear();
+    showUnit(currentUnit);
+  };
+  account.subscribe(followAccount);
+  void accountReady.then(followAccount);
+  document.addEventListener("euclid:unit", ((event: CustomEvent<UnitDetail>) => showUnit(event.detail)) as EventListener);
+  currentUnit = options.currentUnit?.();
   document.addEventListener("euclid:word", ((event: CustomEvent<WordDetail>) => openWord(event.detail)) as EventListener);
   greekReady = Promise.all([loadAnalyser("el"), fetch(new URL("./lexicon/el/koine-index.json", import.meta.url)).then(async (response) => {
     if (!response.ok) return;

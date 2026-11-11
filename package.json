@@ -7,6 +7,7 @@
     "validate": "node scripts/validate.mjs",
     "serve": "node scripts/serve.mjs",
     "corpus": "node scripts/import-corpus.mjs",
-    "golearn": "node scripts/build-golearn.mjs"
+    "golearn": "node scripts/build-golearn.mjs",
+    "test:marks": "node scripts/test-word-marks.mjs"
   }
 }

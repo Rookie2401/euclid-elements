@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const ROMANS = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII'];
 const STORAGE = { position:'ecclesia.euclid.position', size:'ecclesia.euclid.size', focus:'ecclesia.euclid.focus', theme:'ecclesia.euclid.theme' };
-let books = [], flatUnits = [], currentUnitIndex = 0, currentBookIndex = 0, saveTimer;
+let books = [], flatUnits = [], currentUnitIndex = 0, currentBookIndex = 0, saveTimer, currentSites;
 const content = $('reader-content'), status = $('status');
 
 function safeText(node, value) { node.textContent = value ?? ''; return node; }
@@ -45,7 +45,7 @@ function syncNavigation(bookIndex, unit) {
   const propGroup=activeBook?.querySelector('.contents-propositions');if(propGroup)propGroup.open=sectionKey(unit)==='propositions';
   disclosure.setAttribute('aria-label',`Contents, current location Book ${book.roman||ROMANS[bookIndex]}, ${title}`);
 }
-function activateWordMarkup(paragraph, text, unitTitle) {
+function activateWordMarkup(paragraph, text, unitTitle, sites) {
   // Keep the transcription as text nodes. Greek words become small buttons for dictionary hooks.
   const source = String(text ?? '');
   const chunks = source.match(/[\p{Script=Greek}\p{M}]+(?:[’'ʼ][\p{Script=Greek}\p{M}]+)?[’'ʼ]?|[^\p{Script=Greek}\p{M}]+/gu) || [source];
@@ -55,6 +55,7 @@ function activateWordMarkup(paragraph, text, unitTitle) {
       const button=document.createElement('button'); button.className='greek-word'; button.type='button'; button.dataset.word=chunk;
       button.textContent=chunk; button.setAttribute('aria-label',`Look up ${chunk}`);
       const start=source.indexOf(chunk,sourceOffset); sourceOffset=Math.max(sourceOffset,start)+chunk.length;
+      sites?.push({el:button,sentence:source,start,end:start+chunk.length,surface:chunk});
       button.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('euclid:word',{detail:{word:chunk,context:{sentence:source,start,end:start+chunk.length,reference:unitTitle},element:button}})));
       paragraph.append(button);
     } else { paragraph.append(document.createTextNode(chunk)); sourceOffset+=chunk.length; }
@@ -87,13 +88,16 @@ function renderUnit(index, {updateHash=true, scroll=true}={}) {
     const enlarge=()=>{ $('large-diagram').src=img.src; $('large-diagram').alt=img.alt; $('diagram-caption').textContent=caption.textContent; $('diagram-dialog').showModal(); };
     wrap.addEventListener('click',enlarge); wrap.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();enlarge();}}); section.append(wrap);
   }
+  const sites=[];
   (unit.entries || []).forEach(entry=>{
     const article=document.createElement('article'); article.className='entry'; article.id=entry.id;
     const h=document.createElement('h3'); safeText(h,entry.title || ''); article.append(h);
-    (entry.paragraphs || []).forEach(text=>{const p=document.createElement('p'); activateWordMarkup(p,text,`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`); article.append(p);});
+    (entry.paragraphs || []).forEach(text=>{const p=document.createElement('p'); activateWordMarkup(p,text,`Book ${book.roman || ROMANS[bookIndex]} · ${displayTitle(unit)}`,sites); article.append(p);});
     section.append(article);
   });
   content.append(section); content.hidden=false; status.hidden=true;
+  // GoLearn paints each word's knowledge level on these buttons while the learner is signed in.
+  currentSites={key:`${book.number}/${unit.id}`,sites};document.dispatchEvent(new CustomEvent('euclid:unit',{detail:currentSites}));
   const pager=$('page-nav'); pager.hidden=false; pager.replaceChildren();
   if(index>0){const prev=flatUnits[index-1],a=document.createElement('a');a.href=unitHref(prev.book,prev.unit);a.innerHTML=`<small>‹ Previous</small>${escapeHTML(navigationTitle(prev.unit))}`;a.className='previous';pager.append(a);}
   if(index<flatUnits.length-1){const next=flatUnits[index+1],a=document.createElement('a');a.href=unitHref(next.book,next.unit);a.innerHTML=`<small>Next ›</small>${escapeHTML(navigationTitle(next.unit))}`;a.className='next';pager.append(a);}
@@ -119,7 +123,7 @@ $('page-nav').addEventListener('click',e=>{const a=e.target.closest('a');if(a){e
 document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||$('contents-disclosure').open||e.altKey||e.ctrlKey||e.metaKey||e.target.matches('input,textarea,select,button'))return;if(e.key==='ArrowLeft'&&currentUnitIndex>0)location.hash=unitHref(flatUnits[currentUnitIndex-1].book,flatUnits[currentUnitIndex-1].unit).slice(1);if(e.key==='ArrowRight'&&currentUnitIndex<flatUnits.length-1)location.hash=unitHref(flatUnits[currentUnitIndex+1].book,flatUnits[currentUnitIndex+1].unit).slice(1);});
 window.addEventListener('hashchange',route);
 restorePreferences();
-try{const module=await import('./golearn.js?v=biblia-golearn-3');if(module.initGoLearn)await module.initGoLearn({wordEvent:'euclid:word',accountButton:$('account-open'),savedButton:$('saved-open')});}catch(error){console.info('GoLearn account and word tools are not available yet.',error);}
+try{const module=await import('./golearn.js?v=biblia-golearn-4');if(module.initGoLearn)await module.initGoLearn({wordEvent:'euclid:word',currentUnit:()=>currentSites,accountButton:$('account-open'),savedButton:$('saved-open')});}catch(error){console.info('GoLearn account and word tools are not available yet.',error);}
 try{
   const response=await fetch('./data/elements.json'); if(!response.ok)throw new Error(`The text file returned ${response.status}.`);
   const data=await response.json(); books=data.books||[];if(!books.length)throw new Error('No books were found in the text file.');buildBookNav();restorePreferences();

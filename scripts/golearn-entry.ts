@@ -8,7 +8,7 @@ import { getAnalyser } from "../../go-v0/packages/golearn-extension/src/parser/r
 import { buildParadigm, selectedCellKeys, segmentationsOf, structureOf } from "../../go-v0/packages/golearn-extension/src/content/enrich";
 import type { PartOfSpeech } from "../../go-v0/src/core";
 import { packFor } from "../../go-v0/packages/language-packs/src/registry";
-import { createAccountService } from "../../go-v0/packages/biblia/src/account";
+import { createAccountService, renderAccountScreen, renderLegalScreen } from "../../go-v0/packages/biblia/src/account";
 import { accountRecorder } from "../../go-v0/packages/biblia/src/repo";
 import { createEventQueue } from "../../go-v0/packages/biblia/src/queue";
 import { buildAssistanceEvent, buildMarkEvent, buildSelectionEvent, type StoredSourceRef } from "../../go-v0/packages/golearn-extension/src/store";
@@ -25,14 +25,12 @@ let account: ReturnType<typeof createAccountService> | undefined;
 let recorder: ReturnType<typeof accountRecorder> | undefined;
 let activeModel: ReturnType<typeof parseSelection> | undefined;
 let accountReady: Promise<void> = Promise.resolve();
-let accountReadyDone = true;
 let greekReady: Promise<void> = Promise.resolve();
 let greekLoaders: Array<Awaited<ReturnType<typeof createGreekShardLoader>>> = [];
 let knowledgeMutation = 0;
 let lookupGeneration = 0;
 let accountButton: HTMLButtonElement | undefined;
 let savedButton: HTMLButtonElement | undefined;
-let accountDialog: HTMLDialogElement | undefined;
 let savedDialog: HTMLDialogElement | undefined;
 
 type WordContext = { sentence?: string; start?: number; end?: number; reference?: string; varietyId?: string };
@@ -159,49 +157,6 @@ function showSaved(): void {
     list.append(clearButton);
   }
   if (!savedDialog.open) savedDialog.showModal();
-}
-
-function showAccount(): void {
-  if (!accountDialog) return;
-  const body = accountDialog.querySelector<HTMLElement>("[data-account-body]")!;
-  body.replaceChildren();
-  if (!accountReadyDone) {
-    body.append(h("p", "Checking your GoLearn sign-in…"));
-    void accountReady.then(() => { if (accountDialog?.open) showAccount(); });
-    if (!accountDialog.open) accountDialog.showModal();
-    return;
-  }
-  const state = account?.state();
-  if (state?.signedIn) {
-    body.append(h("p", `Signed in as ${state.email ?? "your GoLearn account"}.`));
-    body.append(h("p", "Word lookups and knowledge marks can sync to GoLearn when you are connected. Your Saved words list stays on this device."));
-    const out = h("button", "Sign out"); out.type = "button";
-    out.addEventListener("click", () => { void account?.signOut().then(() => { showAccount(); updateAccountButton(); }); });
-    body.append(out);
-  } else {
-    body.append(h("p", "Sign in to your existing GoLearn account. Your password is sent to GoLearn over HTTPS and is not saved by this reader."));
-    const form = h("form");
-    const emailLabel = h("label", "Email");
-    const email = h("input"); email.type = "email"; email.autocomplete = "username"; email.required = true;
-    emailLabel.append(email);
-    const passwordLabel = h("label", "Password");
-    const password = h("input"); password.type = "password"; password.autocomplete = "current-password"; password.required = true;
-    passwordLabel.append(password);
-    const submit = h("button", "Sign in"); submit.type = "submit";
-    const status = h("p"); status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
-    form.append(emailLabel, passwordLabel, submit, status);
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submit.disabled = true; status.textContent = "Signing in…";
-      const secret = password.value; password.value = "";
-      void account?.signIn(email.value, secret).then((result) => {
-        status.textContent = result.ok ? "Signed in." : result.message;
-        if (result.ok) { showAccount(); updateAccountButton(); }
-      }).catch(() => { status.textContent = "Could not reach GoLearn. Try again."; }).finally(() => { password.value = ""; submit.disabled = false; });
-    });
-    body.append(form);
-  }
-  if (!accountDialog.open) accountDialog.showModal();
 }
 
 function updateAccountButton(): void {
@@ -398,23 +353,20 @@ async function recordInteraction(model: ReturnType<typeof parseSelection>, detai
   }
 }
 
-export async function initGoLearn(options: { accountButton: HTMLElement; savedButton: HTMLElement; currentUnit?: () => UnitDetail | undefined }): Promise<void> {
+export async function initGoLearn(options: { accountButton: HTMLElement; savedButton: HTMLElement; currentUnit?: () => UnitDetail | undefined }) {
   addStylesheet();
   accountButton = options.accountButton as HTMLButtonElement;
   savedButton = options.savedButton as HTMLButtonElement;
-  accountDialog = makeDialog("GoLearn account", "accountBody");
   savedDialog = makeDialog("Saved words", "savedList");
   account = createAccountService({ serviceUrl: SERVICE_URL, storage: localStorage, fetch: window.fetch.bind(window) });
   accountReady = account.start().catch(() => undefined);
-  accountReadyDone = false;
-  void accountReady.then(() => { accountReadyDone = true; if (accountDialog?.open) showAccount(); });
   recorder = accountRecorder({
     session: () => { const session = account?.session(); const api = account?.api(); return session && api ? { api, learnerId: session.learnerId, deviceId: session.deviceId } : undefined; },
     queue: createEventQueue(localStorage), storage: localStorage, win: window,
     subscribeSession: (listener) => account!.subscribe(listener),
     onAuthExpired: () => account?.expire(),
   });
-  accountButton.addEventListener("click", showAccount);
+  accountButton.addEventListener("click", () => { window.location.hash = "#/account"; });
   savedButton.addEventListener("click", showSaved);
   renderSaved(); updateAccountButton();
   account.subscribe(updateAccountButton);
@@ -466,4 +418,18 @@ export async function initGoLearn(options: { accountButton: HTMLElement; savedBu
       loadSet("el/modern", 16),
     ])).flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   });
+  const euclidAccount = (topbar: HTMLElement, done: () => void): HTMLElement => {
+    const view = renderAccountScreen({ doc: document, account: account!, topbar, done });
+    const welcome = view.querySelector<HTMLElement>("#account-welcome-h");
+    if (welcome) welcome.textContent = "Welcome to Euclid";
+    const paragraphs = view.querySelectorAll<HTMLElement>("#account-welcome p");
+    if (paragraphs[0]) paragraphs[0].textContent = "Euclid records what you read with GoLearn on the same account. Sign in with the account you use in GoLearn: what you look up and mark here is kept in it, GoReview and the GoLearn extension see it too, and the words you have met anywhere are marked on the page by how well you know them.";
+    if (paragraphs[1]) paragraphs[1].textContent = "Without an account Euclid is a reader only: every word can be looked up, but nothing is recorded and nothing is marked.";
+    return view;
+  };
+  return {
+    ready: accountReady,
+    renderAccount: euclidAccount,
+    renderLegal: (topbar: HTMLElement, which: "privacy" | "terms", fromSettings = false) => renderLegalScreen({ doc: document, topbar, which, fromSettings }),
+  };
 }

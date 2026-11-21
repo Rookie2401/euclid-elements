@@ -6,6 +6,10 @@ on:
     paths:
       - scripts/golearn-entry.ts
       - scripts/build-golearn.mjs
+      - public/index.html
+      - public/reader.js
+      - public/reader.css
+      - public/fonts/**
       - .github/workflows/rebuild-golearn.yml
   workflow_dispatch:
 

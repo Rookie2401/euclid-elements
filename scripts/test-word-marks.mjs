@@ -58,7 +58,8 @@ globalThis.fetch = fetchMock;
 window.localStorage.setItem('biblia:session', JSON.stringify({ serviceUrl: 'https://go-v0.onrender.com', token: 'mock-session-token', learnerId: 'mock-learner', email: 'learner@example.test', deviceId: 'mock-device' }));
 
 const module = await import(new URL('public/golearn.js', root).href + `?test=${Date.now()}`);
-await module.initGoLearn({ accountButton: window.document.querySelector('#account'), savedButton: window.document.querySelector('#saved') });
+const bridge = await module.initGoLearn({ accountButton: window.document.querySelector('#account'), savedButton: window.document.querySelector('#saved') });
+await bridge.ready;
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const until = async (predicate, label, timeout = 8000) => {
@@ -96,9 +97,10 @@ assert.doesNotMatch(css, /data-level="known"/u, 'Known words are drawn with noth
 const painted = Object.fromEntries(sites.map((site) => [site.surface, site.el.getAttribute('data-level')]));
 
 // Signing out takes the marks away.
-window.document.querySelector('#account').click();
-await until(() => [...window.document.querySelectorAll('[data-account-body] button')].some((b) => b.textContent === 'Sign out'), 'the sign-out button');
-[...window.document.querySelectorAll('[data-account-body] button')].find((b) => b.textContent === 'Sign out').click();
+const accountPage = bridge.renderAccount(window.document.createElement('header'), () => {});
+window.document.body.append(accountPage);
+await until(() => !!window.document.querySelector('#account-signout'), 'the sign-out button');
+window.document.querySelector('#account-signout').click();
 await until(() => sites.every((site) => !site.el.hasAttribute('data-level')), 'the marks to clear after sign-out');
 
 console.log(JSON.stringify({ painted, unitIdsAsked: asked.size, signOutClears: true }, null, 2));

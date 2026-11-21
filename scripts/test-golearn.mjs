@@ -71,7 +71,7 @@ const fetchMock = async (input, init = {}) => {
       return json({ token: 'mock-session-token', learnerId: 'mock-learner', expiresAt: '2099-01-01T00:00:00.000Z' }, 201);
     }
     if (url.pathname === '/enrolments' && init.method === 'GET') return json({ enrolments: [] });
-    if (url.pathname === '/enrolments' && init.method === 'POST') return json({ enrolment: { enrolmentId: 'mock-enrolment', languageId: 'el', varietyId: 'el-koi' } }, 201);
+    if (url.pathname === '/enrolments' && init.method === 'POST') return json({ enrolment: { enrolmentId: 'mock-enrolment', languageId: 'el', varietyId: 'el-att' } }, 201);
     if (url.pathname === '/knowledge') {
       knowledgeCalls++;
       if (init.headers?.Authorization === 'Bearer mock-session-token') {
@@ -108,12 +108,13 @@ const cardRoot = () => roots.find((root) => root.host?.hasAttribute('data-golear
 holdFirstShard = true;
 const cardTarget = window.document.createElement('span');
 window.document.body.append(cardTarget);
-window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'λόγος', element: cardTarget } }));
+const euclidContext = { reference: 'Book I · Definitions' };
+window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'λόγος', context: euclidContext, element: cardTarget } }));
 await until(() => !!heldShardResolve, 'first Greek shard request');
 assert.equal(cardRoot()?.querySelector('.card') ?? null, null, 'the card must wait until the required shard is available');
 const secondTarget = window.document.createElement('span');
 window.document.body.append(secondTarget);
-window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'καί', element: secondTarget } }));
+window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'καί', context: euclidContext, element: secondTarget } }));
 await until(() => !!cardRoot()?.querySelector('.card'), 'second rapid word card');
 assert.match(cardRoot().textContent, /καί/u, 'the newer tap should win while the first tap waits on a shard');
 heldShardResolve(); heldShardResolve = undefined; holdFirstShard = false;
@@ -142,7 +143,7 @@ await until(() => window.document.querySelector('#account').textContent.includes
 
 // Verify knowledge can load, a mark posts through the recorder, and an older pending GET cannot undo the mark.
 const knowledgeBefore = knowledgeCalls;
-window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'λόγος', element: cardTarget } }));
+window.document.dispatchEvent(new window.CustomEvent('euclid:word', { detail: { word: 'λόγος', context: euclidContext, element: cardTarget } }));
 await until(() => knowledgeCalls > knowledgeBefore, 'new-session knowledge request');
 const signedInCard = cardRoot();
 signedInCard.querySelector('.deeperBtn')?.click();
@@ -162,6 +163,19 @@ await tick();
 assert.equal(signedInCard.querySelector('[data-mark="recognized"]').getAttribute('aria-pressed'), 'true', 'stale knowledge results cannot clear a newly recorded mark');
 assert.doesNotMatch(signedInCard.querySelector('.encounters').textContent, /999/u, 'stale knowledge must not replace the profile after a mark');
 assert.equal(sessionCalls, 2, 'one failed and one successful POST /sessions were sent to the mock only');
+const recorded = requests.filter((row) => row.url.endsWith('/events') && row.method === 'POST').flatMap((row) => JSON.parse(row.body).events);
+assert.ok(recorded.length >= 2, 'lookup and mark should be recorded to the account event stream');
+for (const event of recorded) {
+  assert.equal(event.languageId, 'el');
+  assert.equal(event.payload.variety.varietyId, 'el-att', 'Euclid learning events use Classical Attic Greek');
+  if (event.kind === 'SelectionLookedUp') {
+    assert.equal(event.payload.language.varietyId, 'el-att');
+    assert.equal(event.payload.readerId, 'euclid-elements', 'lookup events identify the Euclid reader');
+  }
+  assert.equal(event.subject.sourceRef.kind, 'ebook');
+  assert.equal(event.subject.sourceRef.title, 'Euclid, Elements');
+  assert.match(event.subject.sourceRef.locator, /Book/u);
+}
 
-console.log(JSON.stringify({ checks: ['analyser-ready lookup', 'Koine details/paradigm', 'shard-source attribution', 'session-check sign-in gate', 'visible server failure', 'mock sign-in', 'mock knowledge + mark', 'stale knowledge read guard'], requests: requests.length, externalWrites: 0 }, null, 2));
+console.log(JSON.stringify({ checks: ['analyser-ready lookup', 'Greek details/paradigm', 'shard-source attribution', 'session-check sign-in gate', 'visible server failure', 'mock sign-in', 'mock knowledge + mark', 'stale knowledge read guard', 'Euclid provenance and Attic variety'], requests: requests.length, externalWrites: 0 }, null, 2));
 dom.window.close();

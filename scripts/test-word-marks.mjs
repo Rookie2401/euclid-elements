@@ -26,11 +26,11 @@ globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const asked = new Set();
-// What the account knows: one word marked Known by the learner, one met twice (Seen), one Recognized; the rest have no row (New).
+// What the account knows: words explicitly marked Known, Seen, and Recognized; the rest have no row (New).
 const rowFor = (unitId) => {
   if (/^lemma:el:καί/u.test(unitId)) return { unitId, level: 'known', encounters: 40, selfMark: { mark: 'known', at: '2026-11-01T00:00:00.000Z' } };
-  if (unitId === 'form:el:λογος' || /^lemma:el:λόγος/u.test(unitId)) return { unitId, level: 'seen', encounters: 2 };
-  if (/^(form:el:ευθεια|lemma:el:εὐθ)/u.test(unitId)) return { unitId, level: 'recognized', encounters: 5 };
+  if (/^lemma:el:λόγος/u.test(unitId) || /^form:el:λόγ/u.test(unitId)) return { unitId, level: 'seen', encounters: 2, selfMark: { mark: 'seen', at: '2026-11-02T00:00:00.000Z' } };
+  if (/^(form:el:εὐθε|lemma:el:εὐθ)/u.test(unitId)) return { unitId, level: 'recognized', encounters: 5, selfMark: { mark: 'recognized', at: '2026-11-03T00:00:00.000Z' } };
   return undefined;
 };
 const fetchMock = async (input, init = {}) => {

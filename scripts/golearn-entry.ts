@@ -9,13 +9,16 @@ import { buildParadigm, selectedCellKeys, segmentationsOf, structureOf } from ".
 import type { PartOfSpeech } from "../../go-v0/src/core";
 import { packFor } from "../../go-v0/packages/language-packs/src/registry";
 import { createAccountService } from "../../go-v0/packages/biblia/src/account";
-import { accountRecorder, APP_VERSION, READER_ID } from "../../go-v0/packages/biblia/src/repo";
+import { accountRecorder } from "../../go-v0/packages/biblia/src/repo";
 import { createEventQueue } from "../../go-v0/packages/biblia/src/queue";
-import { buildAssistanceEvent, buildMarkEvent, buildSelectionEvent } from "../../go-v0/packages/golearn-extension/src/store";
+import { buildAssistanceEvent, buildMarkEvent, buildSelectionEvent, type StoredSourceRef } from "../../go-v0/packages/golearn-extension/src/store";
 import { createLevels, type LevelSite } from "../../go-v0/packages/biblia/src/levels";
 import type { KnowledgeLevel } from "../../go-v0/packages/repository-contract/src/knowledge-levels";
 
 const SERVICE_URL = "https://go-v0.onrender.com";
+const READER_ID = "euclid-elements";
+const APP_VERSION = "1.0.0";
+const GREEK_VARIETY = "el-att";
 const SAVED_KEY = "euclid-elements:saved-words";
 const CARD = createCardUI({ doc: document, speech: window.speechSynthesis });
 let account: ReturnType<typeof createAccountService> | undefined;
@@ -45,6 +48,22 @@ let levels: ReturnType<typeof createLevels> | undefined;
 let currentUnit: UnitDetail | undefined;
 let unitGeneration = 0;
 const siteByEl = new WeakMap<Element, LevelSite>();
+const eventSessions = new WeakMap<object, string>();
+
+function eventSession(model: object): string {
+  let id = eventSessions.get(model);
+  if (!id) { id = `euclid:${crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`; eventSessions.set(model, id); }
+  return id;
+}
+
+function sourceFor(detail: WordDetail): StoredSourceRef {
+  return {
+    kind: "ebook",
+    title: "Euclid, Elements",
+    locator: (detail.context?.reference || "Euclid’s Elements").slice(0, 120),
+    restrictions: { textRetention: "unknown", remoteProcessing: "unknown", audioRetention: "unknown", export: "unknown", sharing: "unknown", reviewExamples: "unknown" },
+  };
+}
 
 function showUnit(detail: UnitDetail | undefined): void {
   currentUnit = detail;
@@ -52,7 +71,7 @@ function showUnit(detail: UnitDetail | undefined): void {
   if (!levels) return;
   if (!detail || !account?.session()) { void levels.setChapter(undefined, []); return; }
   const sites: LevelSite[] = detail.sites.map((word) => {
-    const site: LevelSite = { el: word.el, lang: "el", sentence: word.sentence, start: word.start, end: word.end, surface: word.surface, varietyId: "el-koi" };
+    const site: LevelSite = { el: word.el, lang: "el", sentence: word.sentence, start: word.start, end: word.end, surface: word.surface, varietyId: GREEK_VARIETY };
     siteByEl.set(word.el, site);
     return site;
   });
@@ -234,7 +253,7 @@ function openWordReady(detail: WordDetail): void {
     model = parseSelection({ surface: word, languageId: "el", context: {
       kind: sentence ? "sentence" : "none", confidence: sentence ? 1 : 0,
       ...(sentence ? { sentence, ...(start !== undefined ? { selStart: start } : {}), ...(end !== undefined ? { selEnd: end } : {}) } : {}),
-      direction: "ltr", varietyId: "el-koi",
+      direction: "ltr", varietyId: GREEK_VARIETY,
     } });
   } catch {
     const node = detail.element ?? document.body;
@@ -266,7 +285,7 @@ function openWordReady(detail: WordDetail): void {
   };
   CARD.show(model, anchorFor(detail.element), {
     view: {
-      languageName: `Koine Greek${detail.context?.reference ? ` · ${detail.context.reference}` : ""}`,
+      languageName: `Classical (Attic) Greek${detail.context?.reference ? ` · ${detail.context.reference}` : ""}`,
       sources: [
         ...Object.values(adapter?.sources ?? {}).map((source) => ({ label: source.label, ...(source.licence ? { licence: source.licence } : {}) })),
         ...greekLoaders.map((loader) => ({ label: loader.manifest.source.label, licence: loader.manifest.source.licence, url: loader.manifest.source.url })),
@@ -299,7 +318,7 @@ function openWordReady(detail: WordDetail): void {
   const host = CARD.host();
   const root = host ? CARD.root() : undefined;
   if (!root || root.querySelector("[data-euclid-save]")) return;
-  const save = document.createElement("button"); save.type = "button"; save.dataset.euclidSave = ""; save.className = "euclid-card-save"; save.textContent = "Save word";
+  const save = document.createElement("button"); save.type = "button"; save.dataset.euclidSave = ""; save.className = "euclid-card-save"; save.textContent = "Save on this device";
   save.style.cssText = "margin: .55em 0 0; padding: .4em .7em; color: #f4dfbf; background: #302719; border: 1px solid #a17d4f; border-radius: .35em; font: inherit; cursor: pointer;";
   save.addEventListener("click", () => { saveCurrent(detail); save.textContent = "Saved on this device"; });
   const card = root.querySelector(".card");
@@ -353,13 +372,13 @@ async function loadKnowledge(model: ReturnType<typeof parseSelection>): Promise<
 
 async function recordInteraction(model: ReturnType<typeof parseSelection>, detail: WordDetail, kind: "selection" | "mark" | "layer", value?: string): Promise<void> {
   if (!recorder || !account?.session()) return;
-  const identity = await recorder.identity("el", "el-koi");
+  const identity = await recorder.identity("el", GREEK_VARIETY);
   if (!identity) { CARD.setFeedback("Could not connect to your GoLearn account. Your saved words remain on this device."); return; }
   const now = new Date();
   const base = {
-    card: model, readerId: READER_ID, identity, version: APP_VERSION,
-    sessionId: `euclid:${now.getTime().toString(36)}`, now, direction: "ltr",
-    language: { languageId: "el", varietyId: "el-koi", basis: "override" as const, confidence: 1, source: detail.context?.reference ? `euclid:${detail.context.reference}` : "euclid-elements" },
+    card: model, source: sourceFor(detail), readerId: READER_ID, identity, version: APP_VERSION,
+    sessionId: eventSession(model), now, direction: "ltr",
+    language: { languageId: "el", varietyId: GREEK_VARIETY, basis: "override" as const, confidence: 1, source: detail.context?.reference ? `euclid:${detail.context.reference}` : "euclid-elements" },
   };
   const event = kind === "selection" ? buildSelectionEvent(base)
     : kind === "mark" ? buildMarkEvent(base, value as Parameters<typeof buildMarkEvent>[1])

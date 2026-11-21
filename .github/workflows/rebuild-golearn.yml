@@ -65,4 +65,5 @@ jobs:
         run: |
           set -euo pipefail
           git subtree split --prefix=public -b euclid-pages-release
-          git push origin euclid-pages-release:gh-pages
+          pages_head="$(git ls-remote origin refs/heads/gh-pages | cut -f1)"
+          git push origin euclid-pages-release:gh-pages --force-with-lease="refs/heads/gh-pages:${pages_head}"

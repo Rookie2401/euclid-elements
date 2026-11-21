@@ -1,5 +1,15 @@
 /* Euclid’s Elements — Biblia's page structure (library, reading page, settings) in the Ecclesia reader's colours:
    parchment, one gold accent, quiet type. */
+/* Biblia's locally hosted EB Garamond subsets cover Latin, Greek and polytonic Greek. */
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-latin-400-italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+0370-03FF; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-400-italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; unicode-range: U+0370-03FF; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; unicode-range: U+0370-03FF; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-ext-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; unicode-range: U+1F00-1FFF; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-ext-400-italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; unicode-range: U+1F00-1FFF; }
+@font-face { font-family: 'EB Garamond'; src: url('./fonts/eb-garamond-greek-ext-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; unicode-range: U+1F00-1FFF; }
 :root {
   color-scheme: light;
   --paper: #f1e8d7;
@@ -16,10 +26,10 @@
   --accent-soft: #b8935a;
   --accent-ink: #f6efe2;
   --accent-wash: rgba(157, 118, 64, 0.12);
-  --serif: "Cormorant Garamond", Georgia, serif;
-  --book: "Source Serif 4", "Noto Serif", Georgia, serif;
-  --sans: Inter, system-ui, sans-serif;
-  --greek: "Noto Serif", "Source Serif 4", Georgia, serif;
+  --serif: 'EB Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --book: var(--serif);
+  --sans: var(--serif);
+  --greek: var(--serif);
   --greek-size: 1.28rem;
   --greek-leading: 1.8;
   --measure: 40rem;

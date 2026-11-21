@@ -267,6 +267,7 @@ function renderSettings() {
       h('p', {}, 'Heiberg’s edition is public domain. The digital transcription is distributed under ', h('a', { href: 'https://creativecommons.org/licenses/by-sa/4.0/', target: '_blank', rel: 'noreferrer' }, 'CC BY-SA 4.0'), '. The source follows Heiberg’s editorial exclusions, omitting passages he marked for deletion. English book and section headings, and the four parts of the library, are editorial aids.'),
       h('p', {}, 'The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.'),
       h('p', {}, 'Word analysis: GoLearn’s Greek analyser and its form index (Wiktionary-derived). It has not been reviewed by a classicist.'),
+      h('p', {}, 'Display type: EB Garamond, the same Latin and Greek font used by Biblia, under the ', h('a', { href: './fonts/EB-Garamond-OFL.txt', target: '_blank', rel: 'noreferrer' }, 'SIL Open Font License 1.1'), '.'),
       h('p', { class: 'source-line' }, 'Source data: ', h('a', { href: 'https://github.com/Rookie2401/westerncanon', target: '_blank', rel: 'noreferrer' }, 'Rookie2401/westerncanon'), '. Reader: ', h('a', { href: 'https://github.com/Rookie2401/euclid-elements', target: '_blank', rel: 'noreferrer' }, 'Rookie2401/euclid-elements'), '.'),
       about.edition ? h('p', { class: 'source-line' }, `Edition: ${about.edition}.`) : null),
     h('p', { class: 'settings__back' }, h('a', { href: '../' }, '← Ecclesia')))));

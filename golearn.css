@@ -1,31 +1,29 @@
+/* The "Saved words" list (kept on this device), in the look of the account's tiles: a field of colour with no outline, a small-capital
+   heading on a hairline, quiet gold links. */
 .euclid-golearn-dialog {
   width: min(34rem, calc(100vw - 2rem));
   max-height: min(80vh, 42rem);
-  padding: 1.6rem 1.75rem;
+  padding: 1.1rem clamp(0.95rem, 4vw, 1.55rem) 1.3rem;
   color: var(--ink, #292823);
-  background: var(--paper, #f1e8d7);
-  border: 1px solid var(--line, rgba(48, 36, 29, 0.15));
-  border-radius: 2px;
+  background: var(--paper-raised, #f6efe2);
+  border: 0;
+  border-radius: 0.8rem;
   box-shadow: 0 24px 80px rgba(25, 22, 19, 0.28);
-  font: 400 15px/1.6 var(--book, Georgia, serif);
+  font: 400 1.05rem/1.5 var(--serif, Georgia, serif);
 }
 .euclid-golearn-dialog::backdrop { background: rgba(25, 22, 19, 0.55); backdrop-filter: blur(2px); }
-.euclid-golearn-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--line, rgba(48, 36, 29, 0.15)); }
-.euclid-golearn-dialog h2 { margin: 0; font: 500 28px/1.1 var(--serif, Georgia, serif); }
-.euclid-golearn-dialog section { margin-top: 1rem; }
-.euclid-golearn-dialog label { display: grid; gap: .35rem; margin: .8rem 0; font: 400 11px var(--sans, sans-serif); letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #827968); }
-.euclid-golearn-dialog input { width: 100%; padding: .6rem .7rem; color: var(--ink, #292823); background: var(--paper-raised, #f6efe2); border: 1px solid var(--line, rgba(48, 36, 29, 0.15)); border-radius: 2px; font: 400 15px var(--book, Georgia, serif); text-transform: none; letter-spacing: 0; }
+.euclid-golearn-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule-strong, rgba(48, 36, 29, 0.24)); }
+.euclid-golearn-dialog h2 { margin: 0; font: 600 0.8rem/1.3 var(--serif, Georgia, serif); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-soft, #665e50); }
+.euclid-golearn-dialog section { margin-top: 0.9rem; display: grid; gap: 0.2rem; }
+.euclid-golearn-dialog p { margin: 0.2rem 0; color: var(--ink-soft, #665e50); font-style: italic; }
 .euclid-golearn-dialog button {
-  padding: .5rem .9rem;
-  color: var(--accent, #9d7640);
-  background: transparent;
-  border: 1px solid var(--line, rgba(48, 36, 29, 0.15));
-  border-radius: 2px;
-  font: 400 12px var(--sans, sans-serif);
-  letter-spacing: .04em;
-  cursor: pointer;
+  display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.15rem 0.4rem; margin-inline-start: -0.4rem;
+  color: var(--accent-text, #7a5a2c); background: transparent; border: 0; border-radius: 4px;
+  font: 600 0.98rem/1.3 var(--serif, Georgia, serif); text-decoration: underline; text-underline-offset: 0.2em; cursor: pointer;
 }
-.euclid-golearn-dialog button:hover { background: var(--accent-wash, rgba(157, 118, 64, 0.12)); }
-.euclid-golearn-dialog [role="status"] { min-height: 1.5em; color: var(--muted, #827968); }
-.euclid-golearn-dialog ul { display: grid; gap: .5rem; padding-inline-start: 1.4rem; }
-.euclid-golearn-dialog li { padding-block: .25rem; }
+.euclid-golearn-dialog header button { margin-inline: 0 -0.4rem; }
+.euclid-golearn-dialog button:hover { color: var(--ink, #292823); background: var(--accent-wash, rgba(157, 118, 64, 0.12)); }
+.euclid-golearn-dialog li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.5rem; padding: 0.1rem 0; border-bottom: 1px solid var(--rule, rgba(48, 36, 29, 0.12)); color: var(--ink-soft, #665e50); list-style: none; }
+/* a saved word is Greek: set as the reading text is, and not underlined */
+.euclid-golearn-dialog li > button { font: 400 1.25rem/1.4 var(--greek, Georgia, serif); color: var(--ink, #292823); text-decoration: none; }
+.euclid-golearn-dialog [role="status"] { min-height: 1.5em; }

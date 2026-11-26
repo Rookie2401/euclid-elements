@@ -92,7 +92,7 @@ globalThis.fetch = fetchMock;
 const sessionKey = 'biblia:session';
 window.localStorage.setItem(sessionKey, JSON.stringify({ serviceUrl: 'https://go-v0.onrender.com', token: 'old-token', learnerId: 'old-learner', email: 'learner@example.test', deviceId: 'mock-device' }));
 const module = await import(new URL('public/golearn.js', root).href + `?test=${Date.now()}`);
-await module.initGoLearn({ accountButton: window.document.querySelector('#account'), savedButton: window.document.querySelector('#saved') });
+const bridge = await module.initGoLearn({ accountButton: window.document.querySelector('#account'), savedButton: window.document.querySelector('#saved') });
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const until = async (predicate, label, timeout = 5000) => {
@@ -123,23 +123,46 @@ const card = cardRoot();
 assert.match(card.textContent, /καί/u, 'late completion from the first tap must not replace the newer card');
 assert.ok(card.textContent.includes('Wiktionary'), 'card sources should name the shared Greek index source');
 
-// An old /me 401 must finish before the sign-in form is made available.
-window.document.querySelector('#account').click();
-await until(() => !!window.document.querySelector('dialog[open]'), 'account dialog');
-assert.match(window.document.querySelector('[data-account-body]').textContent, /Checking your GoLearn sign-in/u);
-assert.equal(window.document.querySelector('[data-account-body] form'), null, 'sign-in cannot race the initial session check');
+// The account page is Biblia's own screen in GoReview's look (a hero, then warm tiles), saying Euclid's name. The reader draws it only
+// once the saved-session check is done, so an old /me 401 cannot race the sign-in form.
+let sessionChecked = false;
+void bridge.ready.then(() => { sessionChecked = true; });
+await tick();
+assert.equal(sessionChecked, false, 'the saved-session check is still running');
 resolveMe();
-await until(() => !!window.document.querySelector('[data-account-body] form'), 'sign-in form after /me');
-const accountBody = window.document.querySelector('[data-account-body]');
-const email = accountBody.querySelector('input[type="email"]');
-const password = accountBody.querySelector('input[type="password"]');
+await until(() => sessionChecked, 'saved-session check');
+assert.equal(bridge.signedIn(), false, 'the session the service refused is dropped');
+let left = 0;
+const page = bridge.renderAccount(window.document.createElement('div'), () => { left++; });
+window.document.body.append(page);
+assert.deepEqual([...page.querySelector('.acct-hero').children].map((node) => node.textContent), ['Welcome', 'Euclid'], 'the hero: a kicker over the reader’s name');
+assert.equal(page.querySelector('#account-welcome > summary').textContent, 'Welcome to Euclid');
+assert.doesNotMatch(page.textContent, /Biblia/u, 'the page speaks of Euclid, not of the reader it was written for');
+assert.ok(page.querySelector('#account-form.acct-tile'), 'sign-in is a tile');
+assert.equal(page.querySelector('.card, .btn'), null, 'no boxed card or boxed button is left on the page');
+const email = page.querySelector('#account-email');
+const password = page.querySelector('#account-password');
+const formStatus = () => page.querySelector('#account-form .status')?.textContent ?? '';
 email.value = 'learner@example.test'; password.value = 'incorrect';
-accountBody.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-await until(() => accountBody.querySelector('[role="status"]')?.textContent.includes('not accepted'), 'visible sign-in server error');
-assert.match(accountBody.querySelector('[role="status"]').textContent, /not accepted/u);
+page.querySelector('#account-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await until(() => formStatus().includes('not accepted'), 'visible sign-in server error');
+assert.equal(password.value, '', 'the password field is emptied after each attempt');
 password.value = 'mock-password';
-accountBody.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-await until(() => window.document.querySelector('#account').textContent.includes('learner@example.test'), 'successful mocked sign-in');
+page.querySelector('#account-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await until(() => bridge.signedIn(), 'successful mocked sign-in');
+await until(() => window.document.querySelector('#account').textContent.includes('learner@example.test'), 'the library’s account line names the account');
+await until(() => left === 1, 'the page hands back to the library after sign-in');
+page.remove();
+const signedInPage = bridge.renderAccount(window.document.createElement('div'), () => {});
+window.document.body.append(signedInPage);
+assert.equal(signedInPage.querySelector('.acct-hero__kicker').textContent, 'Your account');
+assert.deepEqual([...signedInPage.querySelectorAll('.account-tile__title')].map((node) => node.textContent), ['Sign out', 'Download my data', 'Delete account']);
+signedInPage.remove();
+for (const [which, fromAbout, back] of [['terms', true, '#/about'], ['privacy', false, '#/account']]) {
+  const legal = bridge.renderLegal(window.document.createElement('div'), which, fromAbout);
+  assert.ok(legal.querySelector(`a[href="${back}"]`), `the ${which} page leads back to ${back}`);
+  assert.ok(legal.querySelector('.legal-text').textContent.length > 500);
+}
 
 // Verify knowledge can load, a mark posts through the recorder, and an older pending GET cannot undo the mark.
 const knowledgeBefore = knowledgeCalls;
@@ -177,5 +200,5 @@ for (const event of recorded) {
   assert.match(event.subject.sourceRef.locator, /Book/u);
 }
 
-console.log(JSON.stringify({ checks: ['analyser-ready lookup', 'Greek details/paradigm', 'shard-source attribution', 'session-check sign-in gate', 'visible server failure', 'mock sign-in', 'mock knowledge + mark', 'stale knowledge read guard', 'Euclid provenance and Attic variety'], requests: requests.length, externalWrites: 0 }, null, 2));
+console.log(JSON.stringify({ checks: ['analyser-ready lookup', 'Greek details/paradigm', 'shard-source attribution', 'session-check sign-in gate', 'account page in the new look', 'visible server failure', 'mock sign-in', 'signed-in tiles', 'legal pages', 'mock knowledge + mark', 'stale knowledge read guard', 'Euclid provenance and Attic variety'], requests: requests.length, externalWrites: 0 }, null, 2));
 dom.window.close();

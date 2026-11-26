@@ -1,6 +1,7 @@
 // Euclid's Elements, laid out as Biblia is: a library page (a tree that opens division → book → its sections and propositions),
 // a reading page (a slim header with the way back, where you are, and settings; the text; a pager fixed at the foot), and a
-// settings and account pages. Routes: #/ (library), #/read/<book>/<unit> (reading), #/settings, #/account. Older links (#book-1/<unit>) still open.
+// and the settings, About and account pages. Routes: #/ (library), #/read/<book>/<unit> (reading), #/settings, #/about, #/sources,
+// #/account, #/terms, #/privacy. Older links (#book-1/<unit>) still open.
 const $ = (id) => document.getElementById(id);
 const app = $('app');
 const ROMANS = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII'];
@@ -17,10 +18,6 @@ const SECTION_NOUN = { definitions:'definitions', postulates:'postulates', 'comm
 const ICON = {
   back:'<path d="M15 6l-6 6 6 6"/>',
   chev:'<path d="M9 6l6 6-6 6"/>',
-  book:'<path d="M3 5.5c3.2-.9 6.2-.2 9 1.8v14c-2.8-2-5.8-2.7-9-1.8zM21 5.5c-3.2-.9-6.2-.2-9 1.8v14c2.8-2 5.8-2.7 9-1.8z"/>',
-  layers:'<path d="m12 3 9 5-9 5-9-5 9-5zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
-  licences:'<path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h7"/>',
-  reset:'<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8m0-5v5h5"/>',
   account:'<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
   settings:'<path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h8M16 17h4"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="17" r="2"/>',
 };
@@ -240,7 +237,26 @@ function renderReader(index) {
   saveTimer = setTimeout(() => store.set(STORAGE.position, JSON.stringify({ book: book.number, unit: unit.id, title: reference })), 350);
 }
 
-// ───────────────────────────── settings ─────────────────────────────
+// ───────────────────────────── settings, about, sources ─────────────────────────────
+/** Whether a GoLearn account is signed in (the bridge knows); a bridge that cannot say counts as signed out. */
+const signedIn = () => { try { return !!goLearnBridge?.signedIn?.(); } catch { return false; } };
+/** The edition's own first two sentences (Book I, Definitions 1 and 2), for the sample on Settings. */
+function sampleParagraphs() {
+  const entries = books[0]?.units?.find((unit) => unit.kind === 'definitions')?.entries || [];
+  const lines = entries.slice(0, 2).map((entry) => entry.paragraphs?.[0]).filter(Boolean);
+  return lines.length ? lines : ['σημεῖόν ἐστιν, οὗ μέρος οὐθέν.'];
+}
+/** A plain group, as Biblia's Settings has them: a small-capital heading on a hairline, its rows under it; no box in a box. */
+const plainGroup = (id, title, ...children) => h('section', { class: 'settings-group', id, 'aria-labelledby': `${id}-h` }, h('h2', { id: `${id}-h` }, title), ...children);
+const settingsRow = (...children) => h('div', { class: 'settings-row' }, ...children);
+const para = (cls, ...children) => h('p', cls ? { class: cls } : {}, ...children);
+
+/**
+ * #/settings, as Biblia's is since 2026-11-25 (the owner: "redesign Euclid in the like"): a live sample of the reading text, then plain groups.
+ *   Text         the Greek size and the line spacing, as sliders with their values, and the theme
+ *   Your words   the familiarity marks, a switch shown only while signed in (they exist only with an account); the words saved on this device
+ * then one row to About (#/about: offline reading, sources and licences, the legal pages) and Reset as a quiet link.
+ */
 function renderSettings() {
   currentIndex = -1; publishUnit(undefined);
   document.title = 'Settings — Euclid’s Elements';
@@ -261,34 +277,48 @@ function renderSettings() {
     } });
     return h('div', { class: 'field field--slider' }, h('label', { class: 'cap', for: id }, caption, output), input);
   };
-  const disclosure = (id, iconName, title, subtitle, ...body) => h('details', { class: 'card settings-disclosure', id },
-    h('summary', {}, h('span', { class: 'settings-disclosure__icon', html: svg(iconName) }),
-      h('span', { class: 'settings-disclosure__copy' }, h('span', { class: 'settings-disclosure__title' }, title), h('span', { class: 'settings-disclosure__subtitle' }, subtitle)),
-      h('span', { class: 'settings-disclosure__arrow', html: svg('chev') })),
-    h('div', { class: 'settings-disclosure__body' }, ...body));
-  const reset = h('button', { type: 'button', class: 'btn', id: 'settings-reset', onclick: () => {
+  // set in the reading page's own type, so the size, the spacing and the theme show here at once
+  const sample = h('div', { class: 'settings-sample', id: 'settings-sample', role: 'group', 'aria-label': 'Sample of the reading text' },
+    h('div', { class: 'prose', lang: 'grc' }, sampleParagraphs().map((line) => h('p', {}, line))));
+  const text = plainGroup('settings-text', 'Text',
+    settingsRow(slider('set-greek-size', 'Greek text size', 16, 36, 1, greekSize(), (n) => `${n} px`, (n) => { store.set(STORAGE.size, String(n)); applyType(); })),
+    settingsRow(slider('set-line-height', 'Line spacing', 1.4, 2.6, 0.05, lineSpacing(), (n) => n.toFixed(2), (n) => { store.set(STORAGE.spacing, String(n)); applyType(); })),
+    settingsRow(labelled('Theme', pills('Theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], themeMode(), (mode) => { store.set(STORAGE.theme, mode); applyTheme(); }))));
+  // the marks of how well a word is known exist only with an account and only while signed in: the switch is shown only then
+  const marks = signedIn() ? settingsRow(h('label', { class: 'toggle' },
+    h('input', { type: 'checkbox', role: 'switch', id: 'set-level-marks', ...(marksOn() ? { checked: true } : {}), onchange: (event) => { store.set(STORAGE.marks, event.target.checked ? 'on' : 'off'); applyMarks(); } }),
+    h('span', {}, 'Mark words by familiarity'))) : null;
+  savedButton.className = 'settings-saved';
+  const words = plainGroup('settings-words', 'Your words', marks, settingsRow(savedButton));
+  const about = h('a', { class: 'settings-about', id: 'settings-about', href: '#/about' },
+    h('span', { class: 'settings-about__copy' },
+      h('span', { class: 'settings-about__title' }, 'About Euclid'),
+      h('span', { class: 'settings-about__subtitle' }, 'Offline reading, sources and licences')),
+    h('span', { class: 'settings-about__arrow', html: svg('chev') }));
+  const reset = h('p', { class: 'settings-reset' }, h('button', { type: 'button', class: 'linklike', id: 'settings-reset', onclick: () => {
     for (const key of [STORAGE.theme, STORAGE.size, STORAGE.spacing, STORAGE.marks]) { try { localStorage.removeItem(key); } catch { /* storage may be blocked */ } }
     applyTheme(); applyType(); applyMarks(); renderSettings();
-  } }, h('span', { html: svg('reset') }), 'Reset settings');
-  const reading = h('section', { class: 'card settings-reading', id: 'settings-reading', 'aria-labelledby': 'settings-reading-heading' },
-    h('div', { class: 'settings-reading__intro' }, h('span', { html: svg('book') }), h('h2', { class: 'settings-reading__heading', id: 'settings-reading-heading' }, 'Reading')),
-    h('div', { class: 'settings-row' }, labelled('Theme', pills('Theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], themeMode(), (mode) => { store.set(STORAGE.theme, mode); applyTheme(); }))),
-    h('div', { class: 'settings-row settings-row--slider' }, slider('set-greek-size', 'Greek text size', 16, 36, 1, greekSize(), (n) => `${n} px`, (n) => { store.set(STORAGE.size, String(n)); applyType(); })),
-    h('div', { class: 'settings-row settings-row--slider' }, slider('set-line-height', 'Line spacing', 1.4, 2.6, 0.05, lineSpacing(), (n) => n.toFixed(2), (n) => { store.set(STORAGE.spacing, String(n)); applyType(); })),
-    h('div', { class: 'settings-reader-footer' }, h('label', { class: 'toggle' },
-      h('input', { type: 'checkbox', id: 'set-level-marks', ...(marksOn() ? { checked: true } : {}), onchange: (event) => { store.set(STORAGE.marks, event.target.checked ? 'on' : 'off'); applyMarks(); } }),
-      h('span', {}, 'Mark words by familiarity', h('span', { class: 'help' }, ' Available when signed in.'))), reset));
-  const offline = disclosure('settings-offline', 'layers', 'Offline reading', 'Pages open from the current connection.',
-    h('p', {}, 'This edition loads the reader and each part of the Elements from the connection where it was opened. It is not yet installed for offline use.'),
-    h('p', { class: 'muted' }, 'Kept on this device: your place in the Elements, which parts of the library are open, these settings, your sign-in, and words saved on this device.'));
-  const sourceCard = disclosure('settings-sources', 'licences', 'Sources & Licences', 'Text edition, analysis, diagrams, and typography.',
-    h('p', {}, 'Greek text: Johan Ludvig Heiberg’s 1883–88 edition, from the Perseus Digital Library and OpenGreekAndLatin transcription as adapted in WesternCanon. Heiberg’s edition is public domain; the digital transcription is CC BY-SA 4.0.'),
-    h('p', {}, 'Analysis: GoLearn’s Classical Greek analyser and Wiktionary-derived form index. Diagrams come from Heiberg’s printed edition. Nothing has been reviewed by a classicist.'),
-    h('p', { class: 'muted' }, 'Type: EB Garamond for Latin and Greek, under the SIL Open Font License 1.1.'),
-    h('p', { class: 'muted' }, h('a', { href: './fonts/EB-Garamond-OFL.txt', target: '_blank', rel: 'noopener' }, 'EB Garamond licence')));
-  const footer = h('footer', { class: 'settings-legal-footer' }, h('nav', { class: 'settings-links', 'aria-label': 'Information and legal pages' },
-    h('a', { href: '#/sources' }, 'Sources & limits'), ' · ', h('a', { href: '#/terms/settings' }, 'Terms'), ' · ', h('a', { href: '#/privacy/settings' }, 'Privacy')));
-  app.replaceChildren(h('div', { class: 'settings' }, topbar('settings'), h('main', { class: 'screen' }, h('h1', {}, 'Settings'), reading, offline, sourceCard, footer)));
+  } }, 'Reset to defaults'));
+  app.replaceChildren(h('div', { class: 'settings' }, topbar('settings'), h('main', { class: 'screen' }, h('h1', {}, 'Settings'), sample, text, words, about, reset)));
+  window.scrollTo(0, 0);
+}
+
+/** #/about: what Settings used to carry in two drop-downs (offline reading; sources and licences), and the legal pages. */
+function renderAbout() {
+  currentIndex = -1; publishUnit(undefined);
+  document.title = 'About — Euclid’s Elements';
+  const offline = plainGroup('about-offline', 'Offline reading',
+    para('', 'This edition loads the reader and each part of the Elements from the connection where it was opened. It is not yet installed for offline use.'),
+    para('muted', 'Kept on this device: your place in the Elements, which parts of the library are open, your settings, your sign-in, and the words saved on this device.'));
+  const sourceGroup = plainGroup('about-sources', 'Sources and licences',
+    para('', 'Greek text: Johan Ludvig Heiberg’s 1883–88 edition, from the Perseus Digital Library and OpenGreekAndLatin transcription as adapted in WesternCanon. Heiberg’s edition is public domain; the digital transcription is CC BY-SA 4.0.'),
+    para('', 'Analysis: GoLearn’s Classical Greek analyser and Wiktionary-derived form index. Diagrams come from Heiberg’s printed edition. Nothing has been reviewed by a classicist. ', h('a', { href: '#/sources' }, 'Sources and limits')),
+    para('muted', 'Type: EB Garamond for Latin and Greek, under the SIL Open Font License 1.1. ', h('a', { href: './fonts/EB-Garamond-OFL.txt', target: '_blank', rel: 'noopener', id: 'link-ofl-garamond' }, 'EB Garamond licence')));
+  // the legal drafts are the bridge's (GoLearn's own); without the bridge there is nothing to open
+  const links = goLearnBridge?.renderLegal ? h('nav', { class: 'settings-links', 'aria-label': 'Legal pages' },
+    h('a', { href: '#/terms/about' }, 'Terms'), ' · ', h('a', { href: '#/privacy/about' }, 'Privacy')) : null;
+  app.replaceChildren(h('div', { class: 'settings about' }, topbar('settings'), h('main', { class: 'screen' }, h('h1', {}, 'About'), offline, sourceGroup, links,
+    para('settings-back', h('a', { href: '#/settings' }, 'Back to Settings'), ' · Part of ', h('a', { href: '../' }, 'Ecclesia'), '’s library'))));
   window.scrollTo(0, 0);
 }
 
@@ -296,16 +326,16 @@ function renderSources() {
   currentIndex = -1; publishUnit(undefined);
   document.title = 'Sources and limits — Euclid’s Elements';
   const about = sources?.about || {};
-  app.replaceChildren(h('div', {}, topbar(), h('main', { class: 'screen' }, h('h1', {}, 'Sources and limits'),
-    h('section', { class: 'card' }, h('h2', {}, 'Text and analysis'),
-      h('p', {}, 'Greek text of Euclid’s ', h('i', {}, 'Elements'), ', based on Johan Ludvig Heiberg’s 1883–88 edition. The transcription derives from the Perseus Digital Library and OpenGreekAndLatin canonical-greekLit project (CTS urn:cts:greekLit:tlg1799.tlg001) as adapted in the WesternCanon corpus.'),
-      h('p', {}, 'Heiberg’s edition is public domain. The digital transcription is distributed under CC BY-SA 4.0. English book and section headings, and the four parts of the library, are editorial aids.'),
-      about.edition ? h('p', { class: 'muted' }, `Edition: ${about.edition}.`) : null),
-    h('section', { class: 'card' }, h('h2', {}, 'Diagrams and limits'),
-      h('p', {}, 'The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.'),
-      h('p', {}, 'Word analysis comes from GoLearn’s Classical Greek analyser and Wiktionary-derived form index. It has not been reviewed by a classicist.')),
-    h('section', { class: 'card' }, h('h2', {}, 'Type'), h('p', {}, 'EB Garamond for Latin and Greek, under the SIL Open Font License 1.1.')),
-    h('p', {}, h('a', { class: 'btn', href: '#/' }, 'Library')))));
+  app.replaceChildren(h('div', { class: 'settings about' }, topbar('settings'), h('main', { class: 'screen' }, h('h1', {}, 'Sources and limits'),
+    plainGroup('sources-text', 'Text and analysis',
+      para('', 'Greek text of Euclid’s ', h('i', {}, 'Elements'), ', based on Johan Ludvig Heiberg’s 1883–88 edition. The transcription derives from the Perseus Digital Library and OpenGreekAndLatin canonical-greekLit project (CTS urn:cts:greekLit:tlg1799.tlg001) as adapted in the WesternCanon corpus.'),
+      para('', 'Heiberg’s edition is public domain. The digital transcription is distributed under CC BY-SA 4.0. English book and section headings, and the four parts of the library, are editorial aids.'),
+      about.edition ? para('muted', `Edition: ${about.edition}.`) : null),
+    plainGroup('sources-limits', 'Diagrams and limits',
+      para('', 'The edition includes 459 diagram placements represented by 450 image files, plus 34 source markers for which the printed edition has no figure.'),
+      para('', 'Word analysis comes from GoLearn’s Classical Greek analyser and Wiktionary-derived form index. It has not been reviewed by a classicist.')),
+    plainGroup('sources-type', 'Type', para('', 'EB Garamond for Latin and Greek, under the SIL Open Font License 1.1.')),
+    para('settings-back', h('a', { href: '#/about' }, 'Back to About')))));
   window.scrollTo(0, 0);
 }
 
@@ -319,18 +349,19 @@ async function renderAccountRoute() {
   app.replaceChildren(h('div', {}, topbar('account'), h('main', { class: 'screen' }, h('p', { class: 'status' }, 'Checking your GoLearn sign-in…'))));
   await goLearnBridge.ready;
   if (decodeURIComponent(location.hash.slice(1)).split('/')[1] !== 'account') return;
+  // the account page is Biblia's own screen (GoReview's look: a hero, then warm tiles), drawn by the bridge with Euclid's name
   app.replaceChildren(goLearnBridge.renderAccount(topbar('account'), () => { location.hash = '#/'; }));
   window.scrollTo(0, 0);
 }
 
-async function renderLegalRoute(which, fromSettings) {
+async function renderLegalRoute(which, fromAbout) {
   currentIndex = -1; publishUnit(undefined);
   if (!goLearnBridge?.renderLegal) return;
   await goLearnBridge.ready;
   const hash = decodeURIComponent(location.hash.slice(1));
   if (!hash.startsWith(`/${which}`)) return;
   document.title = `${which === 'privacy' ? 'Privacy Policy' : 'Terms of use'} — Euclid’s Elements`;
-  app.replaceChildren(goLearnBridge.renderLegal(topbar(), which, fromSettings));
+  app.replaceChildren(goLearnBridge.renderLegal(topbar(), which, fromAbout));
   window.scrollTo(0, 0);
 }
 
@@ -350,10 +381,12 @@ function route() {
     if (index >= 0) { renderReader(index); return; }
   }
   if (hash === '/settings') { renderSettings(); return; }
+  if (hash === '/about') { renderAbout(); return; }
   if (hash === '/sources') { renderSources(); return; }
   if (hash === '/account') { void renderAccountRoute(); return; }
-  if (hash === '/privacy' || hash === '/privacy/settings') { void renderLegalRoute('privacy', hash.endsWith('/settings')); return; }
-  if (hash === '/terms' || hash === '/terms/settings') { void renderLegalRoute('terms', hash.endsWith('/settings')); return; }
+  // a legal page opened from About leads back to it (#/terms/settings is the address the former Settings page linked)
+  const legal = hash.match(/^\/(privacy|terms)(?:\/(about|settings))?$/);
+  if (legal) { void renderLegalRoute(legal[1], !!legal[2]); return; }
   renderHome();
 }
 document.addEventListener('keydown', (e) => {
@@ -365,8 +398,10 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('hashchange', route);
 
 try {
-  const module = await import('./golearn.js?v=biblia-account-settings-1');
+  const module = await import('./golearn.js?v=settings-account-2');
   if (module.initGoLearn) goLearnBridge = await module.initGoLearn({ wordEvent: 'euclid:word', currentUnit: () => currentSites, accountButton, savedButton });
+  // Settings shows the familiarity switch only while signed in: redraw it when the sign-in changes under it
+  goLearnBridge?.subscribe?.(() => { if (decodeURIComponent(location.hash.slice(1)) === '/settings') renderSettings(); });
 } catch (error) { console.info('GoLearn account and word tools are not available yet.', error); }
 try {
   const response = await fetch('./data/elements.json');

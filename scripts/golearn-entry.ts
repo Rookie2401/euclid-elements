@@ -418,18 +418,16 @@ export async function initGoLearn(options: { accountButton: HTMLElement; savedBu
       loadSet("el/modern", 16),
     ])).flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   });
-  const euclidAccount = (topbar: HTMLElement, done: () => void): HTMLElement => {
-    const view = renderAccountScreen({ doc: document, account: account!, topbar, done });
-    const welcome = view.querySelector<HTMLElement>("#account-welcome-h");
-    if (welcome) welcome.textContent = "Welcome to Euclid";
-    const paragraphs = view.querySelectorAll<HTMLElement>("#account-welcome p");
-    if (paragraphs[0]) paragraphs[0].textContent = "Euclid records what you read with GoLearn on the same account. Sign in with the account you use in GoLearn: what you look up and mark here is kept in it, GoReview and the GoLearn extension see it too, and the words you have met anywhere are marked on the page by how well you know them.";
-    if (paragraphs[1]) paragraphs[1].textContent = "Without an account Euclid is a reader only: every word can be looked up, but nothing is recorded and nothing is marked.";
-    return view;
-  };
+  // Biblia's own account screen (GoReview's look: a hero, then warm tiles), saying Euclid's name where Biblia's would stand.
+  const euclidAccount = (topbar: HTMLElement, done: () => void): HTMLElement =>
+    renderAccountScreen({ doc: document, account: account!, topbar, done, app: { name: "Euclid" } });
   return {
     ready: accountReady,
     renderAccount: euclidAccount,
-    renderLegal: (topbar: HTMLElement, which: "privacy" | "terms", fromSettings = false) => renderLegalScreen({ doc: document, topbar, which, fromSettings }),
+    // A legal page opened from About leads back to About; otherwise to the account.
+    renderLegal: (topbar: HTMLElement, which: "privacy" | "terms", fromAbout = false) => renderLegalScreen({ doc: document, topbar, which, from: fromAbout ? "about" : "account" }),
+    /** Whether a GoLearn account is signed in now; Settings shows the familiarity switch only then. */
+    signedIn: (): boolean => !!account?.session(),
+    subscribe: (listener: () => void): (() => void) => account!.subscribe(listener),
   };
 }

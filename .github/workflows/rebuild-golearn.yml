@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Rookie2401/go-v0
-          ref: f3a6718c04477ef5b28fbb12f4b1ceaa4e90f6ef
+          ref: e47a943f136a42306e830fa76e618053e46e3b4d
           path: golearn-source
       - name: Set up Node
         uses: actions/setup-node@v4
